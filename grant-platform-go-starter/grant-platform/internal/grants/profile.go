@@ -6,6 +6,15 @@ import (
 	"strings"
 )
 
+// Banks is the maintained catalogue of supported deposit-money banks for this prototype.
+// Review against the CBN register before production use; fintech wallets are excluded.
+var Banks = []string{"Access Bank", "Citibank Nigeria", "Ecobank Nigeria", "Fidelity Bank", "First Bank of Nigeria", "First City Monument Bank", "Globus Bank", "Guaranty Trust Bank", "Keystone Bank", "Optimus Bank", "Parallex Bank", "Polaris Bank", "PremiumTrust Bank", "Providus Bank", "Signature Bank", "Stanbic IBTC Bank", "Standard Chartered Bank", "Sterling Bank", "SunTrust Bank", "Titan Trust Bank", "Union Bank", "United Bank for Africa", "Unity Bank", "Wema Bank", "Zenith Bank"}
+
+func validBank(name string) bool {
+ for _, bank := range Banks { if name == bank { return true } }
+ return false
+}
+
 var accountPattern = regexp.MustCompile(`^[0-9]{10}$`)
 
 func validateProfile(in Input) error {
@@ -24,6 +33,7 @@ func validateProfile(in Input) error {
 			return errors.New("provide a valid " + field.name)
 		}
 	}
+	if !validBank(strings.TrimSpace(in.BankName)) { return errors.New("select a supported Nigerian bank") }
 	if !accountPattern.MatchString(in.AccountNumber) {
 		return errors.New("account_number must contain exactly 10 digits")
 	}
