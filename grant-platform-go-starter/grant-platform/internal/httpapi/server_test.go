@@ -31,7 +31,7 @@ func TestHTTPWorkflowAndPrivacy(t *testing.T) {
 	}
 	admin := strings.Repeat("a", 40)
 	h := New(s, admin)
-	body := `{"full_name":"Example Applicant","date_of_birth":"1990-01-01","phone":"+2348012345678","state":"FCT","lga":"AMAC","business_type":"Retail","business_description":"A fictional retail shop","consent":true,"residential_address":"12 Sample Street, Test Town","business_name":"Sample Retail","business_address":"12 Sample Market","bank_name":"Example Bank","account_name":"Example Applicant","account_number":"0123456789"}`
+	body := `{"full_name":"Example Applicant","date_of_birth":"1990-01-01","phone":"+2348012345678","state":"FCT","lga":"AMAC","business_type":"Retail","business_description":"A fictional retail shop","consent":true,"residential_address":"12 Sample Street, Test Town","business_name":"Sample Retail","business_address":"12 Sample Market","bank_name":"Access Bank","account_name":"Example Applicant","account_number":"0123456789"}`
 	w := request(h, "POST", "/api/v1/applications", "", body)
 	if w.Code != 201 {
 		t.Fatal(w.Code, w.Body.String())

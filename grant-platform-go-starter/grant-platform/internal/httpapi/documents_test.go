@@ -20,7 +20,7 @@ func TestPrivateDocumentWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := grants.Input{FullName: "Sample Applicant", DOB: "1990-01-01", Phone: "+2348012345678", State: "Benue", LGA: "Makurdi", BusinessType: "Retail", BusinessDescription: "Fictional test shop only.", ResidentialAddress: "12 Sample Street, Test Town", BusinessName: "Sample Retail", BusinessAddress: "12 Sample Market", BankName: "Example Bank", AccountName: "Example Applicant", AccountNumber: "0123456789", Consent: true}
+	in := grants.Input{FullName: "Sample Applicant", DOB: "1990-01-01", Phone: "+2348012345678", State: "Benue", LGA: "Makurdi", BusinessType: "Retail", BusinessDescription: "Fictional test shop only.", ResidentialAddress: "12 Sample Street, Test Town", BusinessName: "Sample Retail", BusinessAddress: "12 Sample Market", BankName: "Access Bank", AccountName: "Example Applicant", AccountNumber: "0123456789", Consent: true}
 	a, token, err := s.Create(in)
 	if err != nil {
 		t.Fatal(err)

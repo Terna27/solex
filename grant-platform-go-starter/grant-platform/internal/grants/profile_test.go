@@ -95,3 +95,21 @@ func TestLegacyApplicationCanCompleteProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestSupportedBankSelection ensures unsupported bank names cannot bypass the UI.
+func TestSupportedBankSelection(t *testing.T) {
+	for _, bank := range []string{"Access Bank", "Zenith Bank", "United Bank for Africa"} {
+		s, in := fixture(t, 1)
+		in.BankName = bank
+		if _, _, err := s.Create(in); err != nil {
+			t.Errorf("expected bank %q to be accepted: %v", bank, err)
+		}
+	}
+	for _, bank := range []string{"OPay", "PalmPay", "Example Bank", "", "Fake Bank"} {
+		s, in := fixture(t, 1)
+		in.BankName = bank
+		if _, _, err := s.Create(in); err == nil {
+			t.Errorf("unsupported bank %q was accepted", bank)
+		}
+	}
+}
