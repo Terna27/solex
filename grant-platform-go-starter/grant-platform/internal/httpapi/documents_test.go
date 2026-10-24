@@ -20,7 +20,7 @@ func TestPrivateDocumentWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := grants.Input{FullName: "Sample Applicant", DOB: "1990-01-01", Phone: "+2348012345678", State: "Benue", LGA: "Makurdi", BusinessType: "Retail", BusinessDescription: "Fictional test shop only.", ResidentialAddress: "12 Sample Street, Test Town", BusinessName: "Sample Retail", BusinessAddress: "12 Sample Market", BankName: "Access Bank", AccountName: "Example Applicant", AccountNumber: "0123456789", Consent: true}
+	in := grants.Input{FullName: "Sample Applicant", DOB: "1990-01-01", Phone: "+2348012345678", NIN: "01234567890", State: "Benue", LGA: "Makurdi", BusinessType: "Retail", BusinessDescription: "Fictional test shop only.", ResidentialAddress: "12 Sample Street, Test Town", BusinessName: "Sample Retail", BusinessAddress: "12 Sample Market", BankName: "Access Bank", AccountName: "Example Applicant", AccountNumber: "0123456789", Consent: true}
 	a, token, err := s.Create(in)
 	if err != nil {
 		t.Fatal(err)
@@ -80,8 +80,8 @@ func TestPrivateDocumentWorkflow(t *testing.T) {
 	if w = request(h, "GET", docPath, other, ""); w.Code != 404 {
 		t.Fatal("other applicant accessed image")
 	}
-	if w = request(h, "GET", docPath, token, ""); w.Code != 200 || w.Header().Get("Content-Type") != "image/png" || w.Header().Get("Cache-Control") != "no-store" {
-		t.Fatal("owner download failed")
+	if w = request(h, "GET", docPath, token, ""); w.Code != 404 {
+		t.Fatal("applicant document download should be disabled")
 	}
 	adminPath := "/api/v1/admin/applications/" + a.ID + "/documents/" + doc.ID
 	if w = request(h, "GET", adminPath, token, ""); w.Code != 401 {
@@ -114,7 +114,7 @@ func TestPrivateDocumentWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	restoredHandler := New(restored, admin)
-	if w = request(restoredHandler, "GET", "/api/v1/applications/"+a.ID+"/documents/"+updated.Documents[0].ID, token, ""); w.Code != 200 {
+	if w = request(restoredHandler, "GET", "/api/v1/admin/applications/"+a.ID+"/documents/"+updated.Documents[0].ID, admin, ""); w.Code != 200 {
 		t.Fatal("document lost on restart")
 	}
 	if err = s.SetChecks(a.ID, grants.Checks{Phone: true, Identity: true, Address: true, Business: true, Bank: true}); err != nil {

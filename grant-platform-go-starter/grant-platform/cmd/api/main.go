@@ -19,10 +19,8 @@ func main() {
 	if os.Getenv("APP_MODE") != "local_prototype" {
 		log.Fatal("Set APP_MODE=local_prototype. This build is not approved for public use.")
 	}
-	token := os.Getenv("ADMIN_TOKEN")
-	if len(token) < 32 {
-		log.Fatal("ADMIN_TOKEN must contain at least 32 characters")
-	}
+	email := os.Getenv("ADMIN_EMAIL")
+	passwordHash := os.Getenv("ADMIN_PASSWORD_HASH")
 	capacity, err := strconv.Atoi(os.Getenv("BENEFICIARY_CAPACITY"))
 	if err != nil || capacity < 1 {
 		log.Fatal("Set BENEFICIARY_CAPACITY to a positive funded beneficiary count")
@@ -35,7 +33,11 @@ func main() {
 	if err != nil {
 		log.Fatal("Could not open data store: ", err)
 	}
-	srv := &http.Server{Addr: "127.0.0.1:8080", Handler: httpapi.New(service, token), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 8192}
+	handler, err := httpapi.NewWithAdmin(service, email, passwordHash)
+	if err != nil {
+		log.Fatal(err)
+	}
+	srv := &http.Server{Addr: "127.0.0.1:8080", Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 8192}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {

@@ -21,7 +21,7 @@ func fixture(t *testing.T, capacity int) (*Service, Input) {
 		t.Fatal(err)
 	}
 	s.now = func() time.Time { return time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC) }
-	return s, Input{FullName: "Example Applicant", DOB: "1990-05-20", Phone: "+2348012345678", State: "Benue", LGA: "Makurdi", BusinessType: "Retail", BusinessDescription: "A fictional neighbourhood shop for testing.", ResidentialAddress: "12 Sample Street, Test Town", BusinessName: "Sample Retail", BusinessAddress: "12 Sample Market", BankName: "Access Bank", AccountName: "Example Applicant", AccountNumber: "0123456789", Consent: true}
+	return s, Input{FullName: "Example Applicant", DOB: "1990-05-20", Phone: "+2348012345678", NIN: "01234567890", State: "Benue", LGA: "Makurdi", BusinessType: "Retail", BusinessDescription: "A fictional neighbourhood shop for testing.", ResidentialAddress: "12 Sample Street, Test Town", BusinessName: "Sample Retail", BusinessAddress: "12 Sample Market", BankName: "Access Bank", AccountName: "Example Applicant", AccountNumber: "0123456789", Consent: true}
 }
 func allChecks() Checks { return Checks{true, true, true, true, true} }
 func TestAgeBoundary(t *testing.T) {

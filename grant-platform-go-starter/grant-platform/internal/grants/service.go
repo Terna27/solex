@@ -24,11 +24,13 @@ var ErrConflict = errors.New("application cannot be changed in its current state
 var ErrCapacity = errors.New("funded beneficiary capacity reached")
 var ErrStorage = errors.New("could not save changes")
 var phonePattern = regexp.MustCompile(`^\+234[789][01][0-9]{8}$`)
+var ninPattern = regexp.MustCompile(`^[0-9]{11}$`)
 
 type Input struct {
 	FullName            string `json:"full_name"`
 	DOB                 string `json:"date_of_birth"`
 	Phone               string `json:"phone"`
+	NIN                 string `json:"nin"`
 	State               string `json:"state"`
 	LGA                 string `json:"lga"`
 	BusinessType        string `json:"business_type"`
@@ -80,11 +82,21 @@ type Notification struct {
 	Status        string `json:"status"`
 	Message       string `json:"message"`
 }
+type ApprovalLink struct {
+	Hash      string    `json:"hash"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+type ApprovalNotice struct {
+	Status        string `json:"status"`
+	ReferenceCode string `json:"reference_code"`
+	Message       string `json:"message"`
+}
 type database struct {
-	Applications map[string]Application `json:"applications"`
-	TokenHashes  map[string]string      `json:"token_hashes"`
-	Events       []Event                `json:"events"`
-	Outbox       []Notification         `json:"outbox"`
+	Applications  map[string]Application  `json:"applications"`
+	TokenHashes   map[string]string       `json:"token_hashes"`
+	ApprovalLinks map[string]ApprovalLink `json:"approval_links,omitempty"`
+	Events        []Event                 `json:"events"`
+	Outbox        []Notification          `json:"outbox"`
 }
 type Service struct {
 	mu       sync.Mutex
@@ -98,7 +110,7 @@ func New(path string, capacity int) (*Service, error) {
 	if capacity < 1 {
 		return nil, errors.New("capacity must be positive")
 	}
-	s := &Service{path: path, capacity: capacity, now: time.Now, db: database{Applications: map[string]Application{}, TokenHashes: map[string]string{}, Events: []Event{}, Outbox: []Notification{}}}
+	s := &Service{path: path, capacity: capacity, now: time.Now, db: database{Applications: map[string]Application{}, TokenHashes: map[string]string{}, ApprovalLinks: map[string]ApprovalLink{}, Events: []Event{}, Outbox: []Notification{}}}
 	if path != "" {
 		b, err := os.ReadFile(path)
 		if err != nil && !os.IsNotExist(err) {
@@ -112,6 +124,9 @@ func New(path string, capacity int) (*Service, error) {
 				return nil, errors.New("invalid data store")
 			}
 		}
+	}
+	if s.db.ApprovalLinks == nil {
+		s.db.ApprovalLinks = map[string]ApprovalLink{}
 	}
 	return s, nil
 }
@@ -180,6 +195,9 @@ func validate(in Input, now time.Time) error {
 	}
 	if !phonePattern.MatchString(in.Phone) {
 		return errors.New("phone must use Nigerian international format, such as +2348012345678")
+	}
+	if !ninPattern.MatchString(in.NIN) {
+		return errors.New("nin must contain exactly 11 digits")
 	}
 	dob, err := time.Parse("2006-01-02", in.DOB)
 	if err != nil || dob.Before(time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)) || dob.AddDate(18, 0, 0).After(day(now)) {
@@ -386,3 +404,53 @@ func validState(name string) bool {
 }
 
 var States = []string{"Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue", "Borno", "Cross River", "Delta", "Ebonyi", "Edo", "Ekiti", "Enugu", "FCT", "Gombe", "Imo", "Jigawa", "Kaduna", "Kano", "Katsina", "Kebbi", "Kogi", "Kwara", "Lagos", "Nasarawa", "Niger", "Ogun", "Ondo", "Osun", "Oyo", "Plateau", "Rivers", "Sokoto", "Taraba", "Yobe", "Zamfara"}
+
+// GenerateApprovalLink issues a new 7-day, single-purpose link; prior links are revoked.
+// Only the token hash is stored. It reveals no applicant identity or banking data.
+func (s *Service) GenerateApprovalLink(id string) (string, time.Time, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.db.Applications[id]
+	if !ok {
+		return "", time.Time{}, ErrNotFound
+	}
+	if a.Status != "approved" {
+		return "", time.Time{}, ErrConflict
+	}
+	token, err := randomID()
+	if err != nil {
+		return "", time.Time{}, ErrStorage
+	}
+	expires := s.now().UTC().Add(7 * 24 * time.Hour)
+	err = s.mutate(func(db *database) error {
+		if db.ApprovalLinks == nil {
+			db.ApprovalLinks = map[string]ApprovalLink{}
+		}
+		db.ApprovalLinks[id] = ApprovalLink{Hash: tokenHash(token), ExpiresAt: expires}
+		db.Events = append(db.Events, Event{id, "approval_link_generated", s.now().UTC()})
+		return nil
+	})
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return token, expires, nil
+}
+func (s *Service) ApprovalNotice(token string) (ApprovalNotice, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(token) != 64 {
+		return ApprovalNotice{}, ErrNotFound
+	}
+	hash := tokenHash(token)
+	for id, link := range s.db.ApprovalLinks {
+		if link.Hash != hash || !s.now().Before(link.ExpiresAt) {
+			continue
+		}
+		a, ok := s.db.Applications[id]
+		if !ok || a.Status != "approved" {
+			break
+		}
+		return ApprovalNotice{Status: "approved", ReferenceCode: a.ReferenceCode, Message: "Your Solex grant application has been approved. Please await further instructions. No fee is required. Approval does not mean a payment has been made."}, nil
+	}
+	return ApprovalNotice{}, ErrNotFound
+}
