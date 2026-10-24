@@ -1,5 +1,9 @@
 # API guide
 
+The latest required profile fields and approval document requirements are in
+[COMPLETE_APPLICATION.md](COMPLETE_APPLICATION.md). Upload a passport photograph
+and an ID/proof-of-address image before the approval example below.
+
 Base URL: `http://127.0.0.1:8080/api/v1`
 
 | Method | Path | Authentication | Purpose |

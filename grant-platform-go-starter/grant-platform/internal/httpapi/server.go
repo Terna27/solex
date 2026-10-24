@@ -20,6 +20,7 @@ type Server struct {
 func New(service *grants.Service, adminToken string) http.Handler {
 	s := &Server{service: service, adminHash: sha256.Sum256([]byte(adminToken))}
 	m := http.NewServeMux()
+	m.Handle("GET /", frontend())
 	m.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, map[string]any{"status": "ok", "mode": "local_prototype", "live_transfers": false, "live_sms": false})
 	})
@@ -28,6 +29,10 @@ func New(service *grants.Service, adminToken string) http.Handler {
 	})
 	m.HandleFunc("POST /api/v1/applications", s.create)
 	m.HandleFunc("GET /api/v1/applications/{id}", s.own)
+	m.HandleFunc("PUT /api/v1/applications/{id}/profile", s.updateProfile)
+	m.HandleFunc("POST /api/v1/applications/{id}/documents", s.uploadDocument)
+	m.HandleFunc("GET /api/v1/applications/{id}/documents/{documentID}", s.applicantDocument)
+	m.Handle("GET /api/v1/admin/applications/{id}/documents/{documentID}", s.admin(http.HandlerFunc(s.document)))
 	m.Handle("GET /api/v1/admin/applications", s.admin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { respond(w, 200, s.service.List()) })))
 	m.Handle("PUT /api/v1/admin/applications/{id}/checks", s.admin(http.HandlerFunc(s.checks)))
 	m.Handle("POST /api/v1/admin/applications/{id}/approve", s.admin(http.HandlerFunc(s.approve)))

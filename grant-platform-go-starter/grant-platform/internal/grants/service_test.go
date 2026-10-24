@@ -1,8 +1,11 @@
 package grants
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"sync"
@@ -13,12 +16,12 @@ import (
 
 func fixture(t *testing.T, capacity int) (*Service, Input) {
 	t.Helper()
-	s, err := New("", capacity)
+	s, err := New(filepath.Join(t.TempDir(), "grants.json"), capacity)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s.now = func() time.Time { return time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC) }
-	return s, Input{FullName: "Example Applicant", DOB: "1990-05-20", Phone: "+2348012345678", State: "Benue", LGA: "Makurdi", BusinessType: "Retail", BusinessDescription: "A fictional neighbourhood shop for testing.", Consent: true}
+	return s, Input{FullName: "Example Applicant", DOB: "1990-05-20", Phone: "+2348012345678", State: "Benue", LGA: "Makurdi", BusinessType: "Retail", BusinessDescription: "A fictional neighbourhood shop for testing.", ResidentialAddress: "12 Sample Street, Test Town", BusinessName: "Sample Retail", BusinessAddress: "12 Sample Market", BankName: "Example Bank", AccountName: "Example Applicant", AccountNumber: "0123456789", Consent: true}
 }
 func allChecks() Checks { return Checks{true, true, true, true, true} }
 func TestAgeBoundary(t *testing.T) {
@@ -45,6 +48,7 @@ func TestApprovalAndMonthClamping(t *testing.T) {
 	if err = s.Approve(a.ID, "2027-01-31"); err == nil {
 		t.Fatal("unverified application approved")
 	}
+	addDocuments(t, s, a.ID, token)
 	if err = s.SetChecks(a.ID, allChecks()); err != nil {
 		t.Fatal(err)
 	}
@@ -103,11 +107,12 @@ func TestCapacityUnderConcurrency(t *testing.T) {
 	ids := []string{}
 	for i := 0; i < 8; i++ {
 		in.Phone = fmt.Sprintf("+23480123456%02d", i)
-		a, _, err := s.Create(in)
+		a, token, err := s.Create(in)
 		if err != nil {
 			t.Fatal(err)
 		}
 		ids = append(ids, a.ID)
+		addDocuments(t, s, a.ID, token)
 		if err = s.SetChecks(a.ID, allChecks()); err != nil {
 			t.Fatal(err)
 		}
@@ -182,5 +187,18 @@ func TestRejectionAndPastDate(t *testing.T) {
 	}
 	if err = s.SetChecks(a.ID, allChecks()); !errors.Is(err, ErrConflict) {
 		t.Fatal("terminal state modified")
+	}
+}
+
+func addDocuments(t *testing.T, s *Service, id, token string) {
+	t.Helper()
+	var b bytes.Buffer
+	if err := png.Encode(&b, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"passport_photo", "government_id"} {
+		if _, err := s.UploadDocument(id, token, kind, b.Bytes()); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

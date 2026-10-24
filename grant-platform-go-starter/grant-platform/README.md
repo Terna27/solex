@@ -1,4 +1,4 @@
-# Grant Platform — Go backend, milestone 1
+# Grant Platform — Go backend and frontend
 
 A local prototype for a nationwide Nigerian small-business grant programme:
 
@@ -7,8 +7,13 @@ A local prototype for a nationwide Nigerian small-business grant programme:
 - No application, verification, code-generation, or grant-access fee.
 - Eligibility independent of party membership, voting preference, or campaign activity.
 
-**This is a backend prototype, not a public launch. Use fictional data only.**
-No real SMS, bank transfer, document upload, or automated identity check is connected.
+**This is a local prototype, not a public launch. Use fictional data only.**
+
+The frontend is embedded in Go. After starting the server, open
+http://127.0.0.1:8080 for the application form, status page, and admin workspace.
+See [docs/FRONTEND.md](docs/FRONTEND.md) for usage and update instructions.
+No real SMS, bank transfer, or automated identity check is connected.
+Private JPEG/PNG uploads are available for fictional samples; see [docs/UPLOADS.md](docs/UPLOADS.md).
 An admin can mark sandbox verification checks complete to exercise the workflow.
 These checkboxes are not evidence that a real person has been verified.
 
@@ -70,6 +75,12 @@ curl -X POST http://127.0.0.1:8080/api/v1/applications \
     "lga": "Makurdi",
     "business_type": "Retail shop",
     "business_description": "Fictional shop used to test the application process.",
+    "residential_address": "12 Sample Street, Example Town",
+    "business_name": "Example Retail Shop",
+    "business_address": "12 Sample Market",
+    "bank_name": "Example Bank",
+    "account_name": "Example Applicant",
+    "account_number": "0123456789",
     "consent": true
   }'
 ```
@@ -105,10 +116,10 @@ and appeal process before launch.
 
 1. PostgreSQL repository and migrations, verified geography catalogue, per-staff
    authentication, role separation, applicant phone OTP login and recovery.
-2. Private document uploads, file type and malware checks, signed access links,
-   reviewer evidence, correction requests, and retention/deletion rules.
-3. Applicant pages and admin dashboard. The proposed frontend is Next.js;
-   all business rules and payment integrations remain in Go.
+2. Move private image uploads to cloud storage; add malware scanning, reviewer
+   evidence, correction requests, and retention/deletion rules.
+3. Extend the embedded applicant pages and admin dashboard with document review,
+   correction requests, and staff accounts. Business rules remain in Go.
 4. SMS provider adapter, durable delivery worker, bounded retries, and delivery
    receipts. A queued message must never be displayed as delivered.
 5. Bank-account verification and a transfer provider sandbox. Implement signature
@@ -124,8 +135,8 @@ transfer succeeded. All instalments remain `scheduled`.
 
 ## Production limitations
 
-This milestone has no frontend, public hosting, applicant OTP, staff accounts,
-password recovery, MFA, pagination, rate limiting, private uploads, provider
+This milestone has no public hosting, applicant OTP, staff accounts,
+password recovery, MFA, pagination, rate limiting, production upload storage, provider
 credentials, automatic transfers, or live delivery. The audit log is a local
 development record, not an independently protected audit service. Stored data is
 not encrypted by this application. Do not deploy this build publicly or use real
@@ -141,3 +152,10 @@ internal/httpapi/server.go     HTTP routes, JSON handling, access control
 internal/httpapi/server_test.go
 docs/API.md                    API examples
 ```
+
+## Complete application form
+
+See [docs/COMPLETE_APPLICATION.md](docs/COMPLETE_APPLICATION.md) for the expanded
+form, passport photograph, bank details, and updating existing applications.
+Approval requires complete profile fields, a portrait and ID/proof-of-address
+image, plus all review checks.

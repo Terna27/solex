@@ -3,8 +3,11 @@ package httpapi
 import (
 	"bytes"
 	"encoding/json"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -22,13 +25,13 @@ func request(h http.Handler, method, path, token, body string) *httptest.Respons
 	return w
 }
 func TestHTTPWorkflowAndPrivacy(t *testing.T) {
-	s, err := grants.New("", 1)
+	s, err := grants.New(filepath.Join(t.TempDir(), "grants.json"), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	admin := strings.Repeat("a", 40)
 	h := New(s, admin)
-	body := `{"full_name":"Example Applicant","date_of_birth":"1990-01-01","phone":"+2348012345678","state":"FCT","lga":"AMAC","business_type":"Retail","business_description":"A fictional retail shop","consent":true}`
+	body := `{"full_name":"Example Applicant","date_of_birth":"1990-01-01","phone":"+2348012345678","state":"FCT","lga":"AMAC","business_type":"Retail","business_description":"A fictional retail shop","consent":true,"residential_address":"12 Sample Street, Test Town","business_name":"Sample Retail","business_address":"12 Sample Market","bank_name":"Example Bank","account_name":"Example Applicant","account_number":"0123456789"}`
 	w := request(h, "POST", "/api/v1/applications", "", body)
 	if w.Code != 201 {
 		t.Fatal(w.Code, w.Body.String())
@@ -60,6 +63,15 @@ func TestHTTPWorkflowAndPrivacy(t *testing.T) {
 	if w = request(h, "POST", p+"/approve", admin, `{"first_due_date":"2099-01-01"}`); w.Code != 400 {
 		t.Fatal("unverified approved")
 	}
+	var picture bytes.Buffer
+	if err = png.Encode(&picture, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"passport_photo", "proof_of_address"} {
+		if _, err = s.UploadDocument(result.Application.ID, result.AccessToken, kind, picture.Bytes()); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if w = request(h, "PUT", p+"/checks", admin, `{"phone":true,"identity_and_age":true,"address":true,"business":true,"bank_account_ownership":true}`); w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
@@ -71,11 +83,25 @@ func TestHTTPWorkflowAndPrivacy(t *testing.T) {
 	}
 }
 func TestStrictRequestBodies(t *testing.T) {
-	s, _ := grants.New("", 1)
+	s, _ := grants.New(filepath.Join(t.TempDir(), "grants.json"), 1)
 	h := New(s, strings.Repeat("a", 40))
 	for _, body := range []string{`{"status":"approved"}`, `{} {}`, strings.Repeat("x", 17000), `null`} {
 		if w := request(h, "POST", "/api/v1/applications", "", body); w.Code != 400 {
 			t.Fatal("bad input accepted")
 		}
+	}
+}
+
+func TestEmbeddedFrontend(t *testing.T) {
+	s, _ := grants.New(filepath.Join(t.TempDir(), "grants.json"), 1)
+	h := New(s, strings.Repeat("a", 40))
+	for _, path := range []string{"/", "/style.css", "/app.js"} {
+		w := request(h, "GET", path, "", "")
+		if w.Code != 200 || w.Body.Len() == 0 {
+			t.Fatalf("frontend asset %s: %d", path, w.Code)
+		}
+	}
+	if w := request(h, "GET", "/data/grants.json", "", ""); w.Code != 404 {
+		t.Fatal("data path exposed")
 	}
 }

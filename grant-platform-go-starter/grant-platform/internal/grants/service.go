@@ -34,6 +34,12 @@ type Input struct {
 	BusinessType        string `json:"business_type"`
 	BusinessDescription string `json:"business_description"`
 	Consent             bool   `json:"consent"`
+	ResidentialAddress  string `json:"residential_address"`
+	BusinessName        string `json:"business_name"`
+	BusinessAddress     string `json:"business_address"`
+	BankName            string `json:"bank_name"`
+	AccountName         string `json:"account_name"`
+	AccountNumber       string `json:"account_number"`
 }
 type Checks struct {
 	Phone    bool `json:"phone"`
@@ -60,6 +66,7 @@ type Application struct {
 	Reason        string       `json:"reason,omitempty"`
 	Instalments   []Instalment `json:"instalments"`
 	CreatedAt     time.Time    `json:"created_at"`
+	Documents     []Document   `json:"documents"`
 }
 type Event struct {
 	ApplicationID string    `json:"application_id"`
@@ -165,6 +172,9 @@ func (s *Service) mutate(fn func(*database) error) error {
 }
 func day(t time.Time) time.Time { return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC) }
 func validate(in Input, now time.Time) error {
+	if err := validateProfile(in); err != nil {
+		return err
+	}
 	if len(in.FullName) < 3 || len(in.FullName) > 150 {
 		return errors.New("full_name must contain 3 to 150 characters")
 	}
@@ -234,6 +244,7 @@ func (s *Service) Own(id, token string) (Application, error) {
 		return Application{}, ErrNotFound
 	}
 	a.Instalments = append([]Instalment{}, a.Instalments...)
+	a.Documents = append([]Document{}, a.Documents...)
 	return a, nil
 }
 func (s *Service) List() []Application {
@@ -242,6 +253,7 @@ func (s *Service) List() []Application {
 	out := []Application{}
 	for _, a := range s.db.Applications {
 		a.Instalments = append([]Instalment{}, a.Instalments...)
+		a.Documents = append([]Document{}, a.Documents...)
 		out = append(out, a)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
@@ -292,6 +304,21 @@ func (s *Service) Approve(id, firstDate string) error {
 		}
 		if !a.Checks.Complete() {
 			return errors.New("all verification checks must be complete")
+		}
+		if err := validateProfile(a.Input); err != nil {
+			return err
+		}
+		passport, support := false, false
+		for _, d := range a.Documents {
+			if d.Kind == "passport_photo" {
+				passport = true
+			}
+			if d.Kind == "government_id" || d.Kind == "proof_of_address" {
+				support = true
+			}
+		}
+		if !passport || !support {
+			return errors.New("passport photograph and an ID card or proof of address are required before approval")
 		}
 		approved := 0
 		for _, v := range db.Applications {
