@@ -25,7 +25,7 @@ func New(service *grants.Service, adminToken string) http.Handler {
 		respond(w, 200, map[string]any{"status": "ok", "mode": "local_prototype", "live_transfers": false, "live_sms": false})
 	})
 	m.HandleFunc("GET /api/v1/programme", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, 200, map[string]any{"monthly_amount_kobo": grants.MonthlyKobo, "months": 3, "total_amount_kobo": 3 * grants.MonthlyKobo, "currency": "NGN", "application_fee_kobo": 0, "minimum_age": 18, "states": grants.States, "lga_validation": "manual_review"})
+		respond(w, 200, map[string]any{"monthly_amount_kobo": grants.MonthlyKobo, "months": 3, "total_amount_kobo": 3 * grants.MonthlyKobo, "currency": "NGN", "application_fee_kobo": 0, "minimum_age": 18, "states": grants.States, "banks": grants.Banks, "lga_validation": "manual_review"})
 	})
 	m.HandleFunc("POST /api/v1/applications", s.create)
 	m.HandleFunc("GET /api/v1/applications/{id}", s.own)
