@@ -501,6 +501,125 @@ func (s *Service) DeleteAdminSession(sessionID string) error {
 	})
 }
 
+// ---------------- SECURE PASSWORD WORKFLOWS ----------------
+
+func (s *Service) AdminResetApplicantPassword(applicationID string) (string, User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	a, ok := s.db.Applications[applicationID]
+	if !ok {
+		return "", User{}, ErrNotFound
+	}
+	if a.UserID == "" {
+		return "", User{}, errors.New("application has no associated applicant user account")
+	}
+
+	u, ok := s.db.Users[a.UserID]
+	if !ok {
+		return "", User{}, ErrUserNotFound
+	}
+
+	tempPass, err := generateSecurePassword(12)
+	if err != nil {
+		return "", User{}, err
+	}
+
+	hash, err := HashPassword(tempPass)
+	if err != nil {
+		return "", User{}, err
+	}
+
+	now := s.now().UTC()
+	err = s.mutate(func(db *database) error {
+		u.PasswordHash = hash
+		u.UpdatedAt = now
+		db.Users[u.ID] = u
+
+		// Invalidate all active sessions for this applicant
+		for sessID, sess := range db.Sessions {
+			if sess.UserID == u.ID {
+				delete(db.Sessions, sessID)
+			}
+		}
+
+		// Security audit log (NEVER store password or hash)
+		db.Events = append(db.Events, Event{
+			ApplicationID: applicationID,
+			UserID:        u.ID,
+			Actor:         "admin",
+			Action:        "admin_reset_applicant_password",
+			Details:       fmt.Sprintf("Administrator reset password for applicant %s (%s)", u.FullName, u.Email),
+			At:            now,
+		})
+
+		// Queue email notification
+		emailMsg := EmailMessage{
+			ID:        fmt.Sprintf("EML-RESET-%d", now.UnixNano()),
+			To:        u.Email,
+			Subject:   "Solex Business Grant — Security Notice: Password Reset",
+			Body:      fmt.Sprintf("Hello %s,\n\nYour account password has been reset by an administrator.\n\nYour temporary password is: %s\n\nPlease log in at https://solex.ng/#login and immediately change your password.\n\nBest regards,\nSolex Operations Desk", u.FullName, tempPass),
+			CreatedAt: now,
+			SentAt:    &now,
+			Status:    "saved_locally",
+		}
+		db.Emails = append(db.Emails, emailMsg)
+		db.Outbox = append(db.Outbox, Notification{
+			ID:            emailMsg.ID,
+			ApplicationID: applicationID,
+			Channel:       "email",
+			Status:        "queued",
+			Message:       "Password reset notification queued for " + u.Email,
+		})
+
+		return nil
+	})
+	if err != nil {
+		return "", User{}, err
+	}
+
+	return tempPass, u, nil
+}
+
+func (s *Service) ChangePassword(userID, currentPassword, newPassword, confirmPassword string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	u, ok := s.db.Users[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+
+	if !CheckPassword(u.PasswordHash, currentPassword) {
+		return errors.New("current password is incorrect")
+	}
+
+	if err := ValidatePassword(newPassword, confirmPassword); err != nil {
+		return err
+	}
+
+	newHash, err := HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+
+	now := s.now().UTC()
+	return s.mutate(func(db *database) error {
+		u.PasswordHash = newHash
+		u.UpdatedAt = now
+		db.Users[u.ID] = u
+
+		db.Events = append(db.Events, Event{
+			UserID:  u.ID,
+			Actor:   "user:" + u.ID,
+			Action:  "password_changed",
+			Details: "Applicant updated account password",
+			At:      now,
+		})
+		return nil
+	})
+}
+
 // ---------------- APPLICANT PROFILE METHODS ----------------
 
 func (s *Service) GetProfile(userID string) (ApplicantProfile, error) {

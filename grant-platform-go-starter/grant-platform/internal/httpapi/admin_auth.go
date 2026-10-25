@@ -41,7 +41,7 @@ func (s *Server) adminLogin(w http.ResponseWriter, r *http.Request) {
 	adminEmail := s.getAdminEmail()
 	adminHash := s.getAdminPasswordHash()
 
-	if !grants.VerifyAdminCredentials(in.Email, in.Password, adminEmail, adminHash, s.adminToken) {
+	if !grants.VerifyAdminCredentials(in.Email, in.Password, adminEmail, adminHash) {
 		respond(w, http.StatusUnauthorized, map[string]string{
 			"error": "Invalid administrator email or password.",
 		})

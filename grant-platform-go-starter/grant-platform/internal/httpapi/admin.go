@@ -125,3 +125,24 @@ func (s *Server) adminEmails(w http.ResponseWriter, r *http.Request) {
 	emails := s.service.AdminEmails()
 	respond(w, http.StatusOK, emails)
 }
+
+func (s *Server) adminResetApplicantPassword(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	tempPassword, user, err := s.service.AdminResetApplicantPassword(id)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+
+	respond(w, http.StatusOK, map[string]any{
+		"status":             "ok",
+		"temporary_password": tempPassword,
+		"user_id":            user.ID,
+		"email":              user.Email,
+		"full_name":          user.FullName,
+		"applicant_name":     user.FullName,
+		"applicant_email":    user.Email,
+		"applicant_phone":    user.Phone,
+		"message":            "Temporary password generated. Previous applicant sessions have been revoked.",
+	})
+}

@@ -99,12 +99,19 @@ async function action(form, fn) {
   }
 }
 
-function pwField(name, label = 'Password', minlength = 8) {
+const EYE_OPEN_SVG = `<svg class="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+
+const EYE_CLOSED_SVG = `<svg class="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
+
+function pwField(name, label = 'Password', minlength = 8, id = '') {
+  const inputId = id || ('pw-' + Math.random().toString(36).substring(2, 9));
   return `
-    <label class="field">${label}
+    <label class="field" for="${inputId}">${label}
       <div class="pw-wrap">
-        <input name="${name}" type="password" required minlength="${minlength}" autocomplete="current-password">
-        <button type="button" class="pw-toggle" aria-label="Toggle password visibility">Show</button>
+        <input id="${inputId}" name="${name}" type="password" required minlength="${minlength}" autocomplete="current-password">
+        <button type="button" class="pw-toggle" aria-label="Show password" aria-pressed="false" title="Show password">
+          ${EYE_OPEN_SVG}
+        </button>
       </div>
     </label>
   `;
@@ -115,9 +122,12 @@ function initPasswordToggles(container = document) {
     btn.onclick = () => {
       const input = btn.previousElementSibling;
       if (!input) return;
-      const isPw = input.type === 'password';
-      input.type = isPw ? 'text' : 'password';
-      btn.textContent = isPw ? 'Hide' : 'Show';
+      const willShow = input.type === 'password';
+      input.type = willShow ? 'text' : 'password';
+      btn.setAttribute('aria-label', willShow ? 'Hide password' : 'Show password');
+      btn.setAttribute('aria-pressed', willShow ? 'true' : 'false');
+      btn.setAttribute('title', willShow ? 'Hide password' : 'Show password');
+      btn.innerHTML = willShow ? EYE_CLOSED_SVG : EYE_OPEN_SVG;
     };
   });
 }
@@ -761,7 +771,46 @@ async function dashboard() {
     ` : ''}
 
     ${appCard}
+
+    <section class="card" style="margin-top:24px">
+      <span class="eyebrow">ACCOUNT SECURITY</span>
+      <h3 style="margin-top:6px">Change Password</h3>
+      <p class="muted compact">Keep your account secure with a strong password of at least 8 characters.</p>
+
+      <form id="change-password-form" style="max-width:440px;margin-top:14px">
+        ${pwField('current_password', 'Current Password', 8, 'chg-cur-pw')}
+        ${pwField('new_password', 'New Password', 8, 'chg-new-pw')}
+        ${pwField('confirm_password', 'Confirm New Password', 8, 'chg-cfm-pw')}
+        <div data-error></div>
+        <button class="btn secondary" type="submit" style="margin-top:10px">Update Password</button>
+      </form>
+    </section>
   `;
+
+  initPasswordToggles(main);
+
+  const chgPwForm = document.querySelector('#change-password-form');
+  if (chgPwForm) {
+    chgPwForm.onsubmit = e => {
+      e.preventDefault();
+      action(chgPwForm, async () => {
+        const fd = new FormData(chgPwForm);
+        const cur = fd.get('current_password');
+        const nw = fd.get('new_password');
+        const cfm = fd.get('confirm_password');
+        await api('/auth/change-password', {
+          method: 'POST',
+          body: {
+            current_password: cur,
+            new_password: nw,
+            confirm_password: cfm
+          }
+        });
+        toast('Password updated successfully.');
+        chgPwForm.reset();
+      });
+    };
+  }
 
   // Attach document preview handlers in dashboard
   document.querySelectorAll('[data-dash-doc]').forEach(b => {
@@ -1847,6 +1896,14 @@ function reviewApp(id) {
           ${p.business_description && p.business_description !== p.business_name ? `<p class="compact"><strong>Business Description:</strong> ${escapeHTML(p.business_description)}</p>` : ''}
 
           <hr class="divider">
+          <h3>Applicant Account Access Support</h3>
+          <p class="hint">Assist applicants who cannot access their accounts. Stored passwords are cryptographically hashed with bcrypt and are never displayed. Administrators can generate a secure temporary password and revoke active sessions.</p>
+          <div id="admin-reset-pw-box">
+            <button type="button" id="admin-reset-pw-btn" class="btn secondary sm">Generate Temporary Password</button>
+            <div id="admin-reset-pw-result" style="margin-top:10px"></div>
+          </div>
+
+          <hr class="divider">
           <h3>Supporting Documents (${docs.length})</h3>
           <div>
             ${docs.length ? docs.map(d => `
@@ -1915,6 +1972,48 @@ function reviewApp(id) {
   host.querySelectorAll('[data-admin-doc]').forEach(b => {
     b.onclick = () => previewDocument(a.id, b.dataset.adminDoc, true);
   });
+
+  // Admin reset applicant password handler
+  const resetPwBtn = host.querySelector('#admin-reset-pw-btn');
+  if (resetPwBtn) {
+    resetPwBtn.onclick = async () => {
+      const applicantName = p.full_name || a.full_name || 'Applicant';
+      const applicantEmail = p.email || a.email || 'applicant';
+      if (!confirm(`Generate a secure temporary password for ${applicantName} (${applicantEmail})?\n\nThis will invalidate existing sessions and queue an email with the new temporary credentials.`)) {
+        return;
+      }
+      resetPwBtn.disabled = true;
+      const origText = resetPwBtn.textContent;
+      resetPwBtn.textContent = 'Generating temporary password…';
+      const resultBox = host.querySelector('#admin-reset-pw-result');
+      if (resultBox) resultBox.innerHTML = '';
+      try {
+        const res = await api(`/admin/applications/${encodeURIComponent(a.id)}/reset-password`, {
+          method: 'POST',
+          token: adminToken
+        });
+        toast('Applicant temporary password generated.');
+        if (resultBox) {
+          resultBox.innerHTML = `
+            <div class="notice" style="background:#e8f5e9;border-color:#2e7d32;padding:12px;border-radius:6px">
+              <strong style="color:#1b5e20">Temporary Password Generated</strong>
+              <p style="margin:8px 0">Account: <strong>${escapeHTML(res.email)}</strong></p>
+              <p style="margin:8px 0">Temporary Password: <code style="font-size:15px;font-weight:bold;padding:4px 8px;background:#fff;border:1px solid #a5d6a7;border-radius:4px;user-select:all">${escapeHTML(res.temporary_password)}</code></p>
+              <p class="hint" style="margin:0">Share this temporary password securely with the applicant. They can use it to log in and change their password in their dashboard. Plaintext passwords are never stored in the database.</p>
+            </div>
+          `;
+        }
+      } catch (err) {
+        toast(err.message);
+        if (resultBox) {
+          resultBox.innerHTML = `<div class="error-msg" style="margin-top:8px">${escapeHTML(err.message)}</div>`;
+        }
+      } finally {
+        resetPwBtn.disabled = false;
+        resetPwBtn.textContent = origText;
+      }
+    };
+  }
 
   // Checks form handler
   const checksForm = host.querySelector('#admin-checks-form');

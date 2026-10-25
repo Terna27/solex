@@ -27,7 +27,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 
 	s.setSessionCookie(w, session.ID)
 	respond(w, http.StatusCreated, map[string]any{
-		"user":          user,
+		"user":          user.Sanitized(),
 		"session_token": session.ID,
 		"message":       "Account created successfully.",
 	})
@@ -53,7 +53,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 
 	s.setSessionCookie(w, session.ID)
 	respond(w, http.StatusOK, map[string]any{
-		"user":          user,
+		"user":          user.Sanitized(),
 		"session_token": session.ID,
 		"message":       "Login successful.",
 	})
@@ -83,11 +83,38 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	hasApp := app.ID != ""
 
 	respond(w, http.StatusOK, map[string]any{
-		"user":                user,
+		"user":                user.Sanitized(),
 		"profile_completed":   hasProfile,
 		"has_application":     hasApp,
 		"application_status":  app.Status,
 		"application_summary": app,
+	})
+}
+
+func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
+	user := s.currentUser(r)
+	if user == nil {
+		respond(w, http.StatusUnauthorized, map[string]string{"error": "unauthorised"})
+		return
+	}
+
+	var in struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+		ConfirmPassword string `json:"confirm_password"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+
+	if err := s.service.ChangePassword(user.ID, in.CurrentPassword, in.NewPassword, in.ConfirmPassword); err != nil {
+		fail(w, err)
+		return
+	}
+
+	respond(w, http.StatusOK, map[string]string{
+		"status":  "ok",
+		"message": "Password updated successfully.",
 	})
 }
 

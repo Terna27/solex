@@ -20,9 +20,14 @@ type User struct {
 	FullName     string    `json:"full_name"`
 	Email        string    `json:"email"`
 	Phone        string    `json:"phone"`
-	PasswordHash string    `json:"-"`
+	PasswordHash string    `json:"password_hash,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+func (u User) Sanitized() User {
+	u.PasswordHash = ""
+	return u
 }
 
 type Session struct {
@@ -107,4 +112,21 @@ func generateSecureToken(byteLen int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+const tempPwCharset = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%"
+
+func generateSecurePassword(length int) (string, error) {
+	if length < 8 {
+		length = 12
+	}
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	res := make([]byte, length)
+	for i, b := range bytes {
+		res[i] = tempPwCharset[int(b)%len(tempPwCharset)]
+	}
+	return string(res), nil
 }

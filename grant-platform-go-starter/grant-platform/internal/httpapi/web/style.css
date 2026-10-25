@@ -486,23 +486,44 @@ textarea { min-height: 105px; resize: vertical; }
   position: relative;
   display: flex;
   align-items: center;
+  width: 100%;
 }
 
-.pw-wrap input { padding-right: 44px; }
+.pw-wrap input {
+  padding-right: 44px;
+  width: 100%;
+}
 
 .pw-toggle {
   position: absolute;
-  right: 8px;
+  right: 6px;
   background: transparent;
   border: 0;
   cursor: pointer;
   color: var(--muted);
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 6px;
   border-radius: 4px;
+  line-height: 1;
+  transition: color 0.15s ease, background-color 0.15s ease;
 }
 
-.pw-toggle:hover { color: var(--ink); }
+.pw-toggle:hover {
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.pw-toggle:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 1px;
+}
+
+.pw-toggle svg {
+  display: block;
+  pointer-events: none;
+}
 
 .check {
   display: flex;

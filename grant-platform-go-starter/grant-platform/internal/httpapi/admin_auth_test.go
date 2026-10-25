@@ -718,3 +718,391 @@ func TestAdminFrontend_LoadAdminDefinedAndDoubleSubmitProtection(t *testing.T) {
 		t.Errorf("expected guarded dashboard refresh after approval")
 	}
 }
+
+func TestAdminAuth_NoDefaultPasswordOrTokenLoginFallback(t *testing.T) {
+	s, err := grants.New(filepath.Join(t.TempDir(), "grants.json"), 10)
+	if err != nil {
+		t.Fatalf("failed to create service: %v", err)
+	}
+
+	legacyToken := strings.Repeat("k", 40)
+	h := New(s, legacyToken)
+
+	// 1. Direct unit verification on VerifyAdminCredentials
+	// Empty configured hash must NEVER match default password or legacy token
+	if grants.VerifyAdminCredentials("admin@solex.ng", "AdminP@ssw0rd2026!", "admin@solex.ng", "") {
+		t.Errorf("VerifyAdminCredentials must return false for default password when configuredHash is empty")
+	}
+	if grants.VerifyAdminCredentials("admin@solex.ng", legacyToken, "admin@solex.ng", "") {
+		t.Errorf("VerifyAdminCredentials must return false for legacy token when configuredHash is empty")
+	}
+	if grants.VerifyAdminCredentials("admin@solex.ng", "", "admin@solex.ng", "") {
+		t.Errorf("VerifyAdminCredentials must return false for empty password when configuredHash is empty")
+	}
+
+	// 2. HTTP Admin login when ADMIN_PASSWORD_HASH is unset
+	t.Setenv("ADMIN_EMAIL", "admin@solex.ng")
+	t.Setenv("ADMIN_PASSWORD_HASH", "")
+
+	// Trying default prototype password
+	body, _ := json.Marshal(map[string]string{
+		"email":    "admin@solex.ng",
+		"password": "AdminP@ssw0rd2026!",
+	})
+	w := request(h, "POST", "/api/v1/admin/auth/login", "", string(body))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 when ADMIN_PASSWORD_HASH is unset and default password is used, got %d", w.Code)
+	}
+
+	// Trying legacy token as login password
+	bodyToken, _ := json.Marshal(map[string]string{
+		"email":    "admin@solex.ng",
+		"password": legacyToken,
+	})
+	w = request(h, "POST", "/api/v1/admin/auth/login", "", string(bodyToken))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 when legacy token is used as password in login, got %d", w.Code)
+	}
+
+	// 3. HTTP Admin login when ADMIN_PASSWORD_HASH is set to a bcrypt hash
+	configuredPass := "CustomSecureAdminPass2026!"
+	bcryptHash, _ := grants.HashPassword(configuredPass)
+	t.Setenv("ADMIN_PASSWORD_HASH", bcryptHash)
+
+	// Trying default prototype password must fail
+	w = request(h, "POST", "/api/v1/admin/auth/login", "", string(body))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for default prototype password against configured hash, got %d", w.Code)
+	}
+
+	// Trying legacy token as password must fail
+	w = request(h, "POST", "/api/v1/admin/auth/login", "", string(bodyToken))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for legacy token as password against configured hash, got %d", w.Code)
+	}
+
+	// Only configuredPass succeeds
+	goodBody, _ := json.Marshal(map[string]string{
+		"email":    "admin@solex.ng",
+		"password": configuredPass,
+	})
+	w = request(h, "POST", "/api/v1/admin/auth/login", "", string(goodBody))
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 for configured password, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminAuth_EyeIconAccessibilityAndAttributesInHTMLAndJS(t *testing.T) {
+	s, err := grants.New(filepath.Join(t.TempDir(), "grants.json"), 10)
+	if err != nil {
+		t.Fatalf("failed to create service: %v", err)
+	}
+	h := New(s, strings.Repeat("x", 40))
+
+	// Fetch /app.js
+	w := request(h, "GET", "/app.js", "", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /app.js, got %d", w.Code)
+	}
+	js := w.Body.String()
+
+	// 1. Check password field helper pwField
+	if !strings.Contains(js, `type="password"`) {
+		t.Errorf("expected input type='password' by default")
+	}
+	if !strings.Contains(js, `class="pw-toggle"`) {
+		t.Errorf("expected pw-toggle class on toggle button")
+	}
+	if !strings.Contains(js, `aria-label="Show password"`) {
+		t.Errorf("expected accessible aria-label='Show password'")
+	}
+	if !strings.Contains(js, `aria-pressed="false"`) {
+		t.Errorf("expected aria-pressed='false'")
+	}
+	if !strings.Contains(js, `type="button"`) {
+		t.Errorf("expected type='button' on eye toggle button")
+	}
+	if !strings.Contains(js, `EYE_OPEN_SVG`) || !strings.Contains(js, `EYE_CLOSED_SVG`) {
+		t.Errorf("expected SVG eye icon definitions")
+	}
+
+	// 2. Check toggle functionality in initPasswordToggles
+	if !strings.Contains(js, `input.type = willShow ? 'text' : 'password'`) {
+		t.Errorf("expected toggle between text and password types")
+	}
+	if !strings.Contains(js, `btn.setAttribute('aria-label', willShow ? 'Hide password' : 'Show password')`) {
+		t.Errorf("expected dynamic aria-label update on toggle")
+	}
+	if !strings.Contains(js, `btn.setAttribute('aria-pressed', willShow ? 'true' : 'false')`) {
+		t.Errorf("expected dynamic aria-pressed update on toggle")
+	}
+
+	// 3. Check admin login view uses pwField
+	if !strings.Contains(js, `function adminLoginView()`) {
+		t.Errorf("expected adminLoginView function")
+	}
+	if !strings.Contains(js, `pwField('password', 'Administrator Password', 8)`) {
+		t.Errorf("expected adminLoginView to use pwField with toggle")
+	}
+
+	// 4. Check CSS for keyboard focus visibility and button styling
+	wCSS := request(h, "GET", "/style.css", "", "")
+	if wCSS.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /style.css, got %d", wCSS.Code)
+	}
+	css := wCSS.Body.String()
+	if !strings.Contains(css, ".pw-toggle") {
+		t.Errorf("expected .pw-toggle in style.css")
+	}
+	if !strings.Contains(css, ".pw-toggle:focus-visible") {
+		t.Errorf("expected :focus-visible styling for keyboard accessibility in style.css")
+	}
+}
+
+func TestAdminAuth_ResetApplicantPasswordWorkflow(t *testing.T) {
+	s, err := grants.New(filepath.Join(t.TempDir(), "grants.json"), 10)
+	if err != nil {
+		t.Fatalf("failed to create service: %v", err)
+	}
+
+	adminEmail := "director@solex.ng"
+	adminPass := "SecureAdminPass2026!"
+	adminHash, _ := grants.HashPassword(adminPass)
+	t.Setenv("ADMIN_EMAIL", adminEmail)
+	t.Setenv("ADMIN_PASSWORD_HASH", adminHash)
+
+	h := New(s, strings.Repeat("r", 40))
+
+	// 1. Log in admin
+	loginBody, _ := json.Marshal(map[string]string{
+		"email":    adminEmail,
+		"password": adminPass,
+	})
+	w := request(h, "POST", "/api/v1/admin/auth/login", "", string(loginBody))
+	if w.Code != http.StatusOK {
+		t.Fatalf("admin login failed: %d %s", w.Code, w.Body.String())
+	}
+	var loginRes struct {
+		SessionToken string `json:"session_token"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &loginRes)
+	adminToken := loginRes.SessionToken
+
+	// 2. Register applicant
+	regBody := `{"full_name":"Chidinma Eze","email":"chidinma@example.ng","phone":"+2348055554433","password":"OldPassword2026!","confirm_password":"OldPassword2026!"}`
+	w = request(h, "POST", "/api/v1/auth/register", "", regBody)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("register failed: %d %s", w.Code, w.Body.String())
+	}
+	var regRes struct {
+		SessionToken string `json:"session_token"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &regRes)
+	origAppToken := regRes.SessionToken
+
+	// 3. Save profile & create application
+	prof := `{
+		"full_name": "Chidinma Eze",
+		"date_of_birth": "1994-06-15",
+		"nin": "55512345678",
+		"phone": "+2348055554433",
+		"email": "chidinma@example.ng",
+		"state_of_origin": "Enugu",
+		"lga": "Nsukka",
+		"residential_address": "15 University Road, Nsukka",
+		"business_name": "Chidinma Agro Enterprises",
+		"business_type": "Agribusiness",
+		"state_of_operation": "Enugu",
+		"lga_of_operation": "Nsukka",
+		"business_address": "Market Road, Nsukka",
+		"operating_history": "3 years",
+		"bank_name": "Access Bank",
+		"account_number": "0123456789",
+		"grant_purpose": "agriculture",
+		"business_category": "unregistered"
+	}`
+	w = request(h, "PUT", "/api/v1/profile", origAppToken, prof)
+	if w.Code != http.StatusOK {
+		t.Fatalf("save profile failed: %d %s", w.Code, w.Body.String())
+	}
+	w = request(h, "POST", "/api/v1/applications/start", origAppToken, `{"category":"unregistered"}`)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create application failed: %d %s", w.Code, w.Body.String())
+	}
+	var app struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &app)
+
+	// 4. Test unauthenticated request to reset password endpoint
+	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/reset-password", "", "")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 unauthenticated on reset-password, got %d", w.Code)
+	}
+
+	// 5. Test applicant token trying to reset password endpoint
+	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/reset-password", origAppToken, "")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 applicant token on reset-password, got %d", w.Code)
+	}
+
+	// 6. Admin resets applicant password
+	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/reset-password", adminToken, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("admin reset password failed: %d %s", w.Code, w.Body.String())
+	}
+	var resetRes struct {
+		Status            string `json:"status"`
+		Message           string `json:"message"`
+		TemporaryPassword string `json:"temporary_password"`
+		UserID            string `json:"user_id"`
+		Email             string `json:"email"`
+		FullName          string `json:"full_name"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resetRes); err != nil {
+		t.Fatalf("failed to decode reset response: %v", err)
+	}
+	if resetRes.Status != "ok" || resetRes.TemporaryPassword == "" {
+		t.Fatalf("invalid reset response: %+v", resetRes)
+	}
+	if len(resetRes.TemporaryPassword) < 12 {
+		t.Errorf("temporary password should be at least 12 chars, got %d", len(resetRes.TemporaryPassword))
+	}
+	if resetRes.Email != "chidinma@example.ng" {
+		t.Errorf("expected email chidinma@example.ng, got %s", resetRes.Email)
+	}
+
+	// 7. Verify previous applicant session is invalidated
+	w = request(h, "GET", "/api/v1/profile", origAppToken, "")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected old applicant session to be revoked (401), got %d", w.Code)
+	}
+
+	// 8. Verify old password cannot log in
+	badLogin, _ := json.Marshal(map[string]string{
+		"email":    "chidinma@example.ng",
+		"password": "OldPassword2026!",
+	})
+	w = request(h, "POST", "/api/v1/auth/login", "", string(badLogin))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 with old password after reset, got %d", w.Code)
+	}
+
+	// 9. Applicant logs in with temporary password
+	tempLogin, _ := json.Marshal(map[string]string{
+		"email":    "chidinma@example.ng",
+		"password": resetRes.TemporaryPassword,
+	})
+	w = request(h, "POST", "/api/v1/auth/login", "", string(tempLogin))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 with temporary password, got %d: %s", w.Code, w.Body.String())
+	}
+	var tempLoginRes struct {
+		SessionToken string `json:"session_token"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &tempLoginRes)
+	newAppToken := tempLoginRes.SessionToken
+
+	// 10. Applicant changes password
+	changeBody, _ := json.Marshal(map[string]string{
+		"current_password": resetRes.TemporaryPassword,
+		"new_password":     "MyBrandNewSecurePass2026!",
+		"confirm_password": "MyBrandNewSecurePass2026!",
+	})
+	w = request(h, "POST", "/api/v1/auth/change-password", newAppToken, string(changeBody))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on change-password, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 11. Verify login with the brand new password succeeds
+	brandNewLogin, _ := json.Marshal(map[string]string{
+		"email":    "chidinma@example.ng",
+		"password": "MyBrandNewSecurePass2026!",
+	})
+	w = request(h, "POST", "/api/v1/auth/login", "", string(brandNewLogin))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 with brand new password, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 12. Check emails queue contains notification with temp password
+	w = request(h, "GET", "/api/v1/admin/emails", adminToken, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on /admin/emails, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), resetRes.TemporaryPassword) {
+		t.Errorf("expected emails queue to record reset email")
+	}
+}
+
+func TestAdminAuth_NoExposedHashesOrPlaintextPasswords(t *testing.T) {
+	s, err := grants.New(filepath.Join(t.TempDir(), "grants.json"), 10)
+	if err != nil {
+		t.Fatalf("failed to create service: %v", err)
+	}
+
+	adminEmail := "secadmin@solex.ng"
+	adminPass := "TopSecretPassword2026!"
+	adminHash, _ := grants.HashPassword(adminPass)
+	t.Setenv("ADMIN_EMAIL", adminEmail)
+	t.Setenv("ADMIN_PASSWORD_HASH", adminHash)
+
+	h := New(s, strings.Repeat("s", 40))
+
+	// 1. Admin login
+	loginBody, _ := json.Marshal(map[string]string{
+		"email":    adminEmail,
+		"password": adminPass,
+	})
+	w := request(h, "POST", "/api/v1/admin/auth/login", "", string(loginBody))
+	if w.Code != http.StatusOK {
+		t.Fatalf("admin login failed: %d %s", w.Code, w.Body.String())
+	}
+	bodyStr := w.Body.String()
+	if strings.Contains(bodyStr, adminPass) || strings.Contains(bodyStr, adminHash) || strings.Contains(bodyStr, "password_hash") {
+		t.Errorf("admin login response exposed password or hash: %s", bodyStr)
+	}
+
+	var loginRes struct {
+		SessionToken string `json:"session_token"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &loginRes)
+	adminToken := loginRes.SessionToken
+
+	// 2. Admin auth me
+	w = request(h, "GET", "/api/v1/admin/auth/me", adminToken, "")
+	bodyStr = w.Body.String()
+	if strings.Contains(bodyStr, adminPass) || strings.Contains(bodyStr, adminHash) || strings.Contains(bodyStr, "password_hash") {
+		t.Errorf("admin auth me exposed password or hash: %s", bodyStr)
+	}
+
+	// 3. Register applicant
+	regBody := `{"full_name":"Tunde Bakare","email":"tunde@example.ng","phone":"+2348077778899","password":"ApplicantSecret2026!","confirm_password":"ApplicantSecret2026!"}`
+	w = request(h, "POST", "/api/v1/auth/register", "", regBody)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("register failed: %d %s", w.Code, w.Body.String())
+	}
+	bodyStr = w.Body.String()
+	if strings.Contains(bodyStr, "ApplicantSecret2026!") || strings.Contains(bodyStr, "password_hash") {
+		t.Errorf("applicant register response exposed password or hash: %s", bodyStr)
+	}
+
+	var regRes struct {
+		SessionToken string `json:"session_token"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &regRes)
+	appToken := regRes.SessionToken
+
+	// 4. Applicant auth me
+	w = request(h, "GET", "/api/v1/auth/me", appToken, "")
+	bodyStr = w.Body.String()
+	if strings.Contains(bodyStr, "ApplicantSecret2026!") || strings.Contains(bodyStr, "password_hash") {
+		t.Errorf("applicant auth me exposed password or hash: %s", bodyStr)
+	}
+
+	// 5. Admin audit log
+	w = request(h, "GET", "/api/v1/admin/audit", adminToken, "")
+	bodyStr = w.Body.String()
+	if strings.Contains(bodyStr, adminPass) || strings.Contains(bodyStr, adminHash) || strings.Contains(bodyStr, "ApplicantSecret2026!") || strings.Contains(bodyStr, "password_hash") {
+		t.Errorf("admin audit log exposed plaintext passwords or hashes: %s", bodyStr)
+	}
+}

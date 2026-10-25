@@ -62,6 +62,7 @@ func New(service *grants.Service, adminToken string) http.Handler {
 	m.HandleFunc("POST /api/v1/auth/register", s.register)
 	m.HandleFunc("POST /api/v1/auth/login", s.login)
 	m.HandleFunc("POST /api/v1/auth/logout", s.logout)
+	m.HandleFunc("POST /api/v1/auth/change-password", s.requireAuth(s.changePassword))
 	m.HandleFunc("GET /api/v1/auth/me", s.me)
 
 	// Applicant Profile
@@ -95,6 +96,7 @@ func New(service *grants.Service, adminToken string) http.Handler {
 	m.Handle("POST /api/v1/admin/applications/{id}/approve", s.admin(http.HandlerFunc(s.adminApproveApp)))
 	m.Handle("POST /api/v1/admin/applications/{id}/reject", s.admin(http.HandlerFunc(s.adminRejectApp)))
 	m.Handle("POST /api/v1/admin/applications/{id}/disburse", s.admin(http.HandlerFunc(s.adminDisburseApp)))
+	m.Handle("POST /api/v1/admin/applications/{id}/reset-password", s.admin(http.HandlerFunc(s.adminResetApplicantPassword)))
 	m.Handle("GET /api/v1/admin/applications/{id}/documents/{documentID}", s.admin(http.HandlerFunc(s.document)))
 	m.Handle("GET /api/v1/admin/export", s.admin(http.HandlerFunc(s.adminExport)))
 	m.Handle("GET /api/v1/admin/emails", s.admin(http.HandlerFunc(s.adminEmails)))
