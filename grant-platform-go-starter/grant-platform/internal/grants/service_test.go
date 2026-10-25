@@ -59,19 +59,14 @@ func TestApprovalAndMonthClamping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"2027-01-31", "2027-02-28", "2027-03-31"}
-	if len(a.Instalments) != 3 {
-		t.Fatal("incorrect instalment count")
+	if len(a.Instalments) != 1 {
+		t.Fatalf("expected 1 one-time grant payment instalment, got %d", len(a.Instalments))
 	}
-	var total int64
-	for i, p := range a.Instalments {
-		total += p.AmountKobo
-		if p.DueDate != want[i] || p.Status != "scheduled" {
-			t.Fatalf("bad instalment: %+v", p)
-		}
+	if a.Instalments[0].AmountKobo != GrantAmountUnregisteredKobo || a.Instalments[0].DueDate != "2027-01-31" || a.Instalments[0].Status != "scheduled" {
+		t.Fatalf("bad instalment: %+v", a.Instalments[0])
 	}
-	if total != 22500000 {
-		t.Fatalf("wrong total %d", total)
+	if a.GrantAmountKobo != GrantAmountUnregisteredKobo {
+		t.Fatalf("wrong grant amount %d", a.GrantAmountKobo)
 	}
 	if a.ReferenceCode == "" {
 		t.Fatal("missing reference")
