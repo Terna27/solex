@@ -17,14 +17,18 @@ import (
 type Server struct {
 	service      *grants.Service
 	adminHash    [32]byte
+	adminToken   string
 	loginLimiter *RateLimiter
+	adminLimiter *RateLimiter
 }
 
 func New(service *grants.Service, adminToken string) http.Handler {
 	s := &Server{
 		service:      service,
 		adminHash:    sha256.Sum256([]byte(adminToken)),
+		adminToken:   adminToken,
 		loginLimiter: NewRateLimiter(10, 1*time.Minute),
+		adminLimiter: NewRateLimiter(5, 1*time.Minute),
 	}
 
 	m := http.NewServeMux()
@@ -77,6 +81,11 @@ func New(service *grants.Service, adminToken string) http.Handler {
 	// Payments
 	m.HandleFunc("POST /api/v1/payments/init", s.requireAuth(s.initPayment))
 	m.HandleFunc("POST /api/v1/payments/verify", s.requireAuth(s.verifyPayment))
+
+	// Admin Authentication
+	m.HandleFunc("POST /api/v1/admin/auth/login", s.adminLogin)
+	m.HandleFunc("POST /api/v1/admin/auth/logout", s.adminLogout)
+	m.HandleFunc("GET /api/v1/admin/auth/me", s.adminMe)
 
 	// Admin workspace
 	m.Handle("GET /api/v1/admin/metrics", s.admin(http.HandlerFunc(s.adminMetrics)))
@@ -174,9 +183,21 @@ func bearer(r *http.Request) string {
 
 func (s *Server) admin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := bearer(r)
-		hash := sha256.Sum256([]byte(token))
-		if token == "" || subtle.ConstantTimeCompare(hash[:], s.adminHash[:]) != 1 {
+		token := s.extractAdminSessionToken(r)
+		if token == "" {
+			respond(w, 401, map[string]string{"error": "unauthorised"})
+			return
+		}
+
+		// Check legacy admin token
+		legacyHash := sha256.Sum256([]byte(token))
+		isLegacy := subtle.ConstantTimeCompare(legacyHash[:], s.adminHash[:]) == 1
+
+		// Check active admin session
+		_, err := s.service.AuthenticateAdminSession(token)
+		isAdminSession := err == nil
+
+		if !isLegacy && !isAdminSession {
 			respond(w, 401, map[string]string{"error": "unauthorised"})
 			return
 		}

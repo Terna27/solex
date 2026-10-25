@@ -35,7 +35,8 @@ Requires Go 1.22 or newer.
 ```bash
 cd grant-platform-go-starter/grant-platform
 export APP_MODE=local_prototype
-export ADMIN_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+export ADMIN_EMAIL="admin@solex.ng"
+export ADMIN_PASSWORD_HASH="$(python3 -c 'import bcrypt; print(bcrypt.hashpw(b"AdminP@ssw0rd2026!", bcrypt.gensalt()).decode())')"
 export BENEFICIARY_CAPACITY=10
 export PROGRAMME_COMMENCEMENT_DATE="2026-12-10"
 export PROGRAMME_DISBURSEMENT_DATE="December 2026"
@@ -51,7 +52,8 @@ Open your browser to:
 - **`http://127.0.0.1:8080/#login`**: Sign in to applicant portal
 - **`http://127.0.0.1:8080/#dashboard`**: Applicant tracking dashboard
 - **`http://127.0.0.1:8080/#apply`**: Multi-step grant application journey
-- **`http://127.0.0.1:8080/#admin`**: Administrative review workspace
+- **`http://127.0.0.1:8080/admin/login`**: Dedicated administrator login portal
+- **`http://127.0.0.1:8080/admin/dashboard`**: Protected administrator review workspace
 
 ---
 
@@ -78,4 +80,5 @@ Tests cover:
 - ₦1,000 fee payment initiation, sandbox verification, and idempotency.
 - Document upload re-encoding, mime validation, and private document endpoint protection.
 - Admin metrics, checklist verification, approval, rejection, and CSV export masking.
+- Dedicated administrator login route (`/admin/login`), session creation, cookie management, rate limiting, and applicant exclusion.
 - Legacy backward-compatible application endpoints.

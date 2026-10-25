@@ -10,7 +10,8 @@ let programme = null;
 let currentUser = null;
 let currentProfile = null;
 let currentApp = null;
-let adminToken = sessionStorage.getItem('solex_admin_token') || '';
+let adminToken = '';
+let currentAdmin = null;
 let applications = [];
 let selectedAppID = '';
 let viewEpoch = 0;
@@ -50,7 +51,8 @@ const formatGrantPurpose = val => {
 async function api(path, { method = 'GET', body, token = '' } = {}) {
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  if (token) headers.Authorization = 'Bearer ' + token;
+  const effectiveToken = token || (path.startsWith('/admin') ? adminToken : '');
+  if (effectiveToken) headers.Authorization = 'Bearer ' + effectiveToken;
 
   const baseUrl = window.SOLEX_API_URL || '/api/v1';
   let r;
@@ -68,7 +70,7 @@ async function api(path, { method = 'GET', body, token = '' } = {}) {
 
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
-    if (r.status === 401 && path === '/auth/me') return null;
+    if (r.status === 401 && (path === '/auth/me' || path === '/admin/auth/me')) return null;
     throw Error(data.error || 'The request could not be completed.');
   }
   return data;
@@ -120,15 +122,108 @@ function initPasswordToggles(container = document) {
   });
 }
 
+function getAppRoute() {
+  const p = window.location.pathname.replace(/\/+$/, '');
+  if (p === '/admin/login') return 'admin_login';
+  if (p === '/admin/dashboard' || p === '/admin') return 'admin_dashboard';
+
+  const h = (window.location.hash || '').slice(1).replace(/\/+$/, '');
+  if (h === 'admin/login' || h === 'admin-login') return 'admin_login';
+  if (h === 'admin/dashboard' || h === 'admin-dashboard' || h === 'admin') return 'admin_dashboard';
+
+  return h || 'home';
+}
+
+function navigate(dest) {
+  if (dest === '/admin/login' || dest === 'admin_login') {
+    if (window.location.pathname !== '/admin/login') {
+      window.history.pushState(null, '', '/admin/login');
+    }
+    route();
+    return;
+  }
+  if (dest === '/admin/dashboard' || dest === 'admin_dashboard') {
+    if (window.location.pathname !== '/admin/dashboard') {
+      window.history.pushState(null, '', '/admin/dashboard');
+    }
+    route();
+    return;
+  }
+
+  const clean = dest.startsWith('#') ? dest.slice(1) : dest;
+  if (window.location.pathname.startsWith('/admin')) {
+    window.history.pushState(null, '', '/#' + clean);
+  } else {
+    window.location.hash = '#' + clean;
+  }
+  route();
+}
+
+async function checkAdminAuth() {
+  if (currentAdmin) return currentAdmin;
+  try {
+    const res = await api('/admin/auth/me');
+    if (res && res.authenticated) {
+      currentAdmin = { email: res.email };
+      return currentAdmin;
+    }
+  } catch (_) {}
+  currentAdmin = null;
+  return null;
+}
+
+async function handleAdminLogout() {
+  try {
+    await api('/admin/auth/logout', { method: 'POST' });
+  } catch (_) {}
+  currentAdmin = null;
+  adminToken = '';
+  sessionStorage.removeItem('solex_admin_token');
+  toast('Signed out from Administrator Workspace.');
+  navigate('/admin/login');
+}
+
+async function handleApplicantLogout() {
+  try {
+    await api('/auth/logout', { method: 'POST' });
+  } catch (_) {}
+  currentUser = null;
+  currentProfile = null;
+  currentApp = null;
+  toast('Signed out successfully.');
+  navigate('home');
+}
+
 function renderNav() {
-  const page = location.hash.slice(1) || 'home';
+  const page = getAppRoute();
   const isAuth = !!currentUser;
+  const isAdmin = !!currentAdmin;
 
   let items = [
     { id: 'home', label: '◈ Overview' },
     { id: 'about', label: 'ℹ About Programme' },
     { id: 'eligibility', label: '✓ Eligibility' }
   ];
+
+  if (isAdmin && (page === 'admin_dashboard' || page === 'admin_login')) {
+    items = [
+      { id: 'admin_dashboard', label: '▦ Admin Workspace' },
+      { id: 'home', label: '◈ Public Site' }
+    ];
+    nav.innerHTML = items.map(item => `
+      <a href="${item.id === 'home' ? '#home' : '/admin/dashboard'}" data-page="${item.id}" class="${page === item.id ? 'active' : ''}">
+        <span>${escapeHTML(item.label)}</span>
+      </a>
+    `).join('');
+
+    headerUserStatus.innerHTML = `Administrator: <strong>${escapeHTML(currentAdmin.email || 'Operations Desk')}</strong>`;
+    userPill.textContent = 'Admin Workspace';
+    userPill.classList.remove('hidden');
+    headerLogoutBtn.textContent = 'Sign Out Admin';
+    headerLogoutBtn.classList.remove('hidden');
+    headerLogoutBtn.onclick = handleAdminLogout;
+    return;
+  }
 
   if (isAuth) {
     items.push({ id: 'dashboard', label: '◎ Applicant Dashboard' });
@@ -139,7 +234,6 @@ function renderNav() {
   }
 
   items.push({ id: 'contact', label: '✉ Contact Desk' });
-  items.push({ id: 'admin', label: '▦ Admin Workspace' });
 
   nav.innerHTML = items.map(item => `
     <a href="#${item.id}" data-page="${item.id}" class="${page === item.id ? 'active' : ''}">
@@ -151,25 +245,15 @@ function renderNav() {
     headerUserStatus.innerHTML = `Welcome, <strong>${escapeHTML(currentUser.full_name)}</strong>`;
     userPill.textContent = currentUser.email;
     userPill.classList.remove('hidden');
+    headerLogoutBtn.textContent = 'Sign out';
     headerLogoutBtn.classList.remove('hidden');
+    headerLogoutBtn.onclick = handleApplicantLogout;
   } else {
     headerUserStatus.textContent = 'Small businesses. More possibilities.';
     userPill.classList.add('hidden');
     headerLogoutBtn.classList.add('hidden');
   }
 }
-
-headerLogoutBtn.onclick = async () => {
-  try {
-    await api('/auth/logout', { method: 'POST' });
-  } catch (_) {}
-  currentUser = null;
-  currentProfile = null;
-  currentApp = null;
-  toast('Signed out successfully.');
-  location.hash = '#home';
-  route();
-};
 
 // ----------------- PAGES -----------------
 
@@ -1437,48 +1521,68 @@ function renderSubmittedView(app) {
   `;
 }
 
-// ----------------- ADMIN DASHBOARD -----------------
+// ----------------- ADMIN DASHBOARD & LOGIN -----------------
 
-function admin() {
-  if (!adminToken) {
-    main.innerHTML = heading('PROGRAMME OPERATIONS', 'Administrator Workspace', 'Authorised access to application review, checklist verification, and disbursement.') + `
-      <form id="admin-login-form" class="card login">
-        <span class="eyebrow">RESTRICTED ACCESS</span>
+function adminLoginView() {
+  main.innerHTML = heading('RESTRICTED OPERATIONS', 'Administrator Workspace', 'Authorised access to verify applicants, review CAC certificates, and record decisions.') + `
+    <div class="login">
+      <form id="admin-login-form" class="card">
+        <span class="eyebrow">SOLEX OPERATIONS PORTAL</span>
         <h2 style="margin-top:10px">Sign in as Administrator</h2>
-        <p class="muted compact">Enter the configured ADMIN_TOKEN.</p>
-        <label class="field">Admin Security Token
-          <input name="token" type="password" required autocomplete="off" placeholder="At least 32 characters">
+        <p class="muted compact">Enter your configured administrator credentials to access the operations workspace.</p>
+
+        <label class="field">Administrator Email Address
+          <input name="email" type="email" required placeholder="admin@solex.ng" autocomplete="username">
         </label>
+
+        ${pwField('password', 'Administrator Password', 8)}
+
         <div data-error></div>
-        <button class="btn" style="width:100%;margin-top:14px" type="submit">Access Workspace →</button>
+        <button class="btn" style="width:100%;margin-top:14px" type="submit">Sign In as Administrator →</button>
+
+        <div class="info-box" style="margin-top:20px;font-size:13px;line-height:1.5">
+          <strong>Restricted Access:</strong> This portal is reserved for designated Solex programme administrators. Applicant accounts cannot access this workspace.
+        </div>
       </form>
-    `;
-    const form = document.querySelector('#admin-login-form');
-    form.onsubmit = e => {
-      e.preventDefault();
-      action(form, async () => {
-        const token = new FormData(form).get('token').trim();
-        const metrics = await api('/admin/metrics', { token });
-        adminToken = token;
-        sessionStorage.setItem('solex_admin_token', token);
-        adminDashboard(metrics);
+    </div>
+  `;
+  initPasswordToggles();
+
+  const form = document.querySelector('#admin-login-form');
+  form.onsubmit = e => {
+    e.preventDefault();
+    action(form, async () => {
+      const fd = new FormData(form);
+      const email = fd.get('email').trim();
+      const password = fd.get('password');
+      const res = await api('/admin/auth/login', {
+        method: 'POST',
+        body: { email, password }
       });
-    };
+      if (res && res.session_token) {
+        adminToken = res.session_token;
+      }
+      currentAdmin = (res && res.admin) ? res.admin : { email };
+      toast('Administrator signed in successfully.');
+      navigate('/admin/dashboard');
+    });
+  };
+}
+
+async function adminDashboardView() {
+  main.innerHTML = '<div class="empty">Loading administrator workspace…</div>';
+
+  let metrics;
+  try {
+    metrics = await api('/admin/metrics');
+  } catch (err) {
+    currentAdmin = null;
+    adminToken = '';
+    navigate('/admin/login');
     return;
   }
 
-  loadAdmin();
-}
-
-async function loadAdmin() {
-  try {
-    const metrics = await api('/admin/metrics', { token: adminToken });
-    adminDashboard(metrics);
-  } catch (err) {
-    adminToken = '';
-    sessionStorage.removeItem('solex_admin_token');
-    admin();
-  }
+  adminDashboard(metrics);
 }
 
 async function adminDashboard(metrics) {
@@ -1489,6 +1593,12 @@ async function adminDashboard(metrics) {
     list = await api('/admin/applications', { token: adminToken });
     applications = list;
   } catch (err) {
+    if (err.message && err.message.toLowerCase().includes('unauthori')) {
+      currentAdmin = null;
+      adminToken = '';
+      navigate('/admin/login');
+      return;
+    }
     main.innerHTML = `<div class="error">${escapeHTML(err.message)}</div>`;
     return;
   }
@@ -1549,14 +1659,11 @@ async function adminDashboard(metrics) {
     <div id="admin-modal-host"></div>
   `;
 
-  document.querySelector('#admin-refresh').onclick = loadAdmin;
-  document.querySelector('#admin-logout').onclick = () => {
-    adminToken = '';
-    sessionStorage.removeItem('solex_admin_token');
-    admin();
-  };
+  document.querySelector('#admin-refresh').onclick = adminDashboardView;
+  document.querySelector('#admin-logout').onclick = handleAdminLogout;
   document.querySelector('#admin-export-csv').onclick = () => {
-    window.location.href = `/api/v1/admin/export?format=csv&token=${encodeURIComponent(adminToken)}`;
+    const tokenParam = adminToken ? `&token=${encodeURIComponent(adminToken)}` : '';
+    window.location.href = `/api/v1/admin/export?format=csv${tokenParam}`;
   };
   document.querySelector('#admin-view-emails').onclick = showAdminEmails;
   document.querySelector('#admin-view-audit').onclick = showAdminAudit;
@@ -1919,7 +2026,7 @@ async function showAdminAudit() {
 
 async function route() {
   const epoch = ++viewEpoch;
-  const page = location.hash.slice(1) || 'home';
+  const page = getAppRoute();
 
   // Load programme metadata once
   if (!programme) {
@@ -1937,7 +2044,32 @@ async function route() {
     }
   }
 
-  // Check auth status if not known
+  // Handle dedicated administrator routes
+  if (page === 'admin_login') {
+    const admin = await checkAdminAuth();
+    if (epoch !== viewEpoch) return;
+    if (admin) {
+      navigate('/admin/dashboard');
+      return;
+    }
+    renderNav();
+    adminLoginView();
+    return;
+  }
+
+  if (page === 'admin_dashboard') {
+    const admin = await checkAdminAuth();
+    if (epoch !== viewEpoch) return;
+    if (!admin) {
+      navigate('/admin/login');
+      return;
+    }
+    renderNav();
+    adminDashboardView();
+    return;
+  }
+
+  // Check applicant auth status if not known
   if (currentUser === null) {
     try {
       const meData = await api('/auth/me');
@@ -1959,8 +2091,7 @@ async function route() {
     register,
     login,
     dashboard,
-    apply,
-    admin
+    apply
   };
 
   const handler = pages[page] || home;
@@ -1968,4 +2099,5 @@ async function route() {
 }
 
 window.addEventListener('hashchange', route);
+window.addEventListener('popstate', route);
 route();

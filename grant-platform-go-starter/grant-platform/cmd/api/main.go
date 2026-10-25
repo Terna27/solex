@@ -20,8 +20,9 @@ func main() {
 		log.Fatal("Set APP_MODE=local_prototype. This build is not approved for public use.")
 	}
 	token := os.Getenv("ADMIN_TOKEN")
-	if len(token) < 32 {
-		log.Fatal("ADMIN_TOKEN must contain at least 32 characters")
+	adminHash := os.Getenv("ADMIN_PASSWORD_HASH")
+	if len(token) < 32 && adminHash == "" {
+		log.Fatal("Configure ADMIN_TOKEN (at least 32 characters) or ADMIN_PASSWORD_HASH")
 	}
 	capacity, err := strconv.Atoi(os.Getenv("BENEFICIARY_CAPACITY"))
 	if err != nil || capacity < 1 {

@@ -64,16 +64,17 @@ type Notification struct {
 }
 
 type database struct {
-	Version      int                         `json:"version"`
-	Users        map[string]User             `json:"users"`
-	Sessions     map[string]Session          `json:"sessions"`
-	Profiles     map[string]ApplicantProfile `json:"profiles"`
-	Applications map[string]Application      `json:"applications"`
-	Payments     map[string]Payment          `json:"payments"`
-	TokenHashes  map[string]string           `json:"token_hashes"` // legacy
-	Events       []Event                     `json:"events"`
-	Outbox       []Notification              `json:"outbox"`
-	Emails       []EmailMessage              `json:"emails"`
+	Version       int                         `json:"version"`
+	Users         map[string]User             `json:"users"`
+	Sessions      map[string]Session          `json:"sessions"`
+	AdminSessions map[string]AdminSession     `json:"admin_sessions,omitempty"`
+	Profiles      map[string]ApplicantProfile `json:"profiles"`
+	Applications  map[string]Application      `json:"applications"`
+	Payments      map[string]Payment          `json:"payments"`
+	TokenHashes   map[string]string           `json:"token_hashes"` // legacy
+	Events        []Event                     `json:"events"`
+	Outbox        []Notification              `json:"outbox"`
+	Emails        []EmailMessage              `json:"emails"`
 }
 
 type Service struct {
@@ -95,9 +96,10 @@ func New(path string, capacity int) (*Service, error) {
 		now:      time.Now,
 		db: database{
 			Version:      2,
-			Users:        map[string]User{},
-			Sessions:     map[string]Session{},
-			Profiles:     map[string]ApplicantProfile{},
+			Users:         map[string]User{},
+			Sessions:      map[string]Session{},
+			AdminSessions: map[string]AdminSession{},
+			Profiles:      map[string]ApplicantProfile{},
 			Applications: map[string]Application{},
 			Payments:     map[string]Payment{},
 			TokenHashes:  map[string]string{},
@@ -121,6 +123,9 @@ func New(path string, capacity int) (*Service, error) {
 			}
 			if s.db.Sessions == nil {
 				s.db.Sessions = map[string]Session{}
+			}
+			if s.db.AdminSessions == nil {
+				s.db.AdminSessions = map[string]AdminSession{}
 			}
 			if s.db.Profiles == nil {
 				s.db.Profiles = map[string]ApplicantProfile{}
@@ -422,6 +427,78 @@ func (s *Service) GetUser(userID string) (User, error) {
 		return User{}, ErrUserNotFound
 	}
 	return u, nil
+}
+
+// ---------------- ADMINISTRATOR SESSIONS ----------------
+
+func (s *Service) CreateAdminSession(email string) (AdminSession, error) {
+	token, err := generateSecureToken(32)
+	if err != nil {
+		return AdminSession{}, err
+	}
+
+	now := s.now().UTC()
+	sess := AdminSession{
+		ID:        token,
+		Email:     email,
+		CreatedAt: now,
+		ExpiresAt: now.Add(12 * time.Hour),
+	}
+
+	err = s.mutate(func(db *database) error {
+		if db.AdminSessions == nil {
+			db.AdminSessions = map[string]AdminSession{}
+		}
+		db.AdminSessions[sess.ID] = sess
+		db.Events = append(db.Events, Event{
+			Actor:  "admin:" + email,
+			Action: "admin_logged_in",
+			At:     now,
+		})
+		return nil
+	})
+	if err != nil {
+		return AdminSession{}, err
+	}
+	return sess, nil
+}
+
+func (s *Service) AuthenticateAdminSession(sessionID string) (AdminSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if sessionID == "" {
+		return AdminSession{}, ErrUnauthorized
+	}
+
+	if s.db.AdminSessions == nil {
+		return AdminSession{}, ErrUnauthorized
+	}
+
+	sess, ok := s.db.AdminSessions[sessionID]
+	if !ok || sess.IsExpired(s.now().UTC()) {
+		return AdminSession{}, ErrUnauthorized
+	}
+
+	return sess, nil
+}
+
+func (s *Service) DeleteAdminSession(sessionID string) error {
+	now := s.now().UTC()
+	return s.mutate(func(db *database) error {
+		if db.AdminSessions != nil {
+			sess, ok := db.AdminSessions[sessionID]
+			if ok {
+				delete(db.AdminSessions, sessionID)
+				db.Events = append(db.Events, Event{
+					Actor:  "admin:" + sess.Email,
+					Action: "admin_logged_out",
+					At:     now,
+				})
+			}
+		}
+		return nil
+	})
 }
 
 // ---------------- APPLICANT PROFILE METHODS ----------------

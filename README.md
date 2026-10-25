@@ -12,7 +12,7 @@ A nationwide Nigerian small-business grant application and administration platfo
 - **CAC Registration**: Mandatory CAC number and certificate upload for Category B applications with administrative verification.
 - **Application Processing Fee**: **₦1,000** fee with statutory pre-payment disclosure and local sandbox payment simulator.
 - **Email Infrastructure**: Automated submission confirmations without exposing sensitive identifiers.
-- **Administrator Dashboard**: Metrics tracking, applicant review checklist, decisions with recorded reasons, disbursements, audit logging, and privacy-preserving CSV export.
+- **Administrator Dashboard & Workspace**: Completely separated from public navigation with dedicated `/admin/login` and `/admin/dashboard` routes, HttpOnly session cookies, rate limiting, and applicant exclusion.
 - **GitHub Pages Preview**: Static informational landing page in `docs/` compatible with GitHub Pages hosting.
 
 ---
