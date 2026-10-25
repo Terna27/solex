@@ -1,74 +1,45 @@
-# API guide
-
-The latest required profile fields and approval document requirements are in
-[COMPLETE_APPLICATION.md](COMPLETE_APPLICATION.md). Upload a passport photograph
-and an ID/proof-of-address image before the approval example below.
+# Solex Business Grant Platform — API Guide
 
 Base URL: `http://127.0.0.1:8080/api/v1`
 
-| Method | Path | Authentication | Purpose |
+## API Endpoints Overview
+
+| Method | Path | Authentication | Description |
 | --- | --- | --- | --- |
-| GET | `/health` | None | Local prototype health and provider status |
-| GET | `/programme` | None | Amounts, duration, free access, state options |
-| POST | `/applications` | None | Submit application and obtain private access token |
-| GET | `/applications/{id}` | Applicant bearer token | Read own application and schedule |
-| GET | `/admin/applications` | Admin bearer token | Review applications |
-| PUT | `/admin/applications/{id}/checks` | Admin bearer token | Replace all sandbox check flags |
-| POST | `/admin/applications/{id}/approve` | Admin bearer token | Approve, create schedule, queue SMS |
-| POST | `/admin/applications/{id}/reject` | Admin bearer token | Reject with reason |
-| GET | `/admin/outbox` | Admin bearer token | See messages awaiting provider setup |
-| GET | `/admin/audit` | Admin bearer token | See development audit events |
+| `GET` | `/health` | None | Service status, mode, and commencement dates |
+| `GET` | `/programme` | None | Programme categories, dates, bank catalogue, states |
+| `GET` | `/fee-disclosure` | None | Statutory disclosure for the ₦1,000 application fee |
+| `POST` | `/auth/register` | None | Create an applicant account |
+| `POST` | `/auth/login` | None | Authenticate applicant and issue session cookie |
+| `POST` | `/auth/logout` | Session | Invalidate active session and clear cookie |
+| `GET` | `/auth/me` | Session | Get current authenticated user and profile summary |
+| `GET` | `/profile` | Session | Fetch applicant's completed profile |
+| `PUT` | `/profile` | Session | Save/update applicant personal, business, and bank details |
+| `GET` | `/applications/current` | Session | Get applicant's active grant application |
+| `POST` | `/applications/start` | Session | Start application with chosen category (`unregistered` or `registered`) |
+| `POST` | `/applications/{id}/documents` | Session / Token | Upload supporting document (`passport_photo`, `government_id`, `proof_of_address`, `cac_certificate`) |
+| `GET` | `/applications/{id}/documents/{docID}` | Session / Token | View private uploaded image |
+| `POST` | `/applications/ready-for-payment` | Session | Verify uploaded documents and advance to `awaiting_payment` |
+| `POST` | `/payments/init` | Session | Initialize ₦1,000 payment record |
+| `POST` | `/payments/verify` | Session | Server-side payment verification (with sandbox simulator support) |
+| `POST` | `/applications/submit` | Session | Finalize submission; queue confirmation email |
+| `GET` | `/admin/metrics` | Admin Token | High-level metrics across users, categories, fees, and grants |
+| `GET` | `/admin/applications` | Admin Token | Filtered list of applications (`q`, `state`, `category`, `status`) |
+| `GET` | `/admin/applications/{id}` | Admin Token | Complete application dossier with documents |
+| `PUT` | `/admin/applications/{id}/checks` | Admin Token | Update verification checklist (Phone, NIN/Age, Address, Business, Bank, CAC) |
+| `POST` | `/admin/applications/{id}/approve` | Admin Token | Approve application for one-time grant allocation |
+| `POST` | `/admin/applications/{id}/reject` | Admin Token | Reject application with reason |
+| `POST` | `/admin/applications/{id}/disburse` | Admin Token | Record disbursement for approved application |
+| `GET` | `/admin/export` | Admin Token | Export privacy-preserving records (JSON or CSV with masked NIN) |
+| `GET` | `/admin/emails` | Admin Token | Inspect queued/sent applicant notification emails |
+| `GET` | `/admin/audit` | Admin Token | View immutable administrative audit trail |
 
-Send `Content-Type: application/json` on requests with JSON bodies. Unknown JSON
-fields, oversized payloads, and multiple JSON values are rejected. Responses use
-400 for validation failures, 401 for missing/invalid admin credentials, 404 for
-missing or unauthorised applicant records, and 409 for conflicts/capacity limits.
+---
 
-## Review flow
+## Authentication Modes
 
-After creating an application using the README example, set these values in a
-terminal that has the same `ADMIN_TOKEN` used to start the API:
-
-```bash
-APPLICATION_ID='replace-with-application-id'
-APPLICANT_TOKEN='replace-with-private-access-token'
-
-curl "http://127.0.0.1:8080/api/v1/applications/$APPLICATION_ID" \
-  -H "Authorization: Bearer $APPLICANT_TOKEN"
-
-curl http://127.0.0.1:8080/api/v1/admin/applications \
-  -H "Authorization: Bearer $ADMIN_TOKEN"
-
-# Sandbox only: simulates completed checks; does not perform verification.
-curl -X PUT "http://127.0.0.1:8080/api/v1/admin/applications/$APPLICATION_ID/checks" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"phone":true,"identity_and_age":true,"address":true,"business":true,"bank_account_ownership":true}'
-
-# Choose an actual date today or later. The date below is only an example.
-curl -X POST "http://127.0.0.1:8080/api/v1/admin/applications/$APPLICATION_ID/approve" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"first_due_date":"2027-01-31"}'
-
-curl http://127.0.0.1:8080/api/v1/admin/outbox \
-  -H "Authorization: Bearer $ADMIN_TOKEN"
-```
-
-That example schedules 31 January, 28 February, and 31 March 2027. Each amount is
-7,500,000 kobo (NGN 75,000). Due dates are calendar dates, not promises that a bank
-has processed funds. No funds move in this prototype.
-
-The applicant's access token remains private. Do not use it in URLs, screenshots,
-public logs, or SMS messages. The free approval reference is separate and grants
-no authority to transfer funds.
-
-To reject a different application still in `submitted` status:
-
-```json
-{"reason":"Business eligibility could not be established from the review."}
-```
-
-Submit that body to `POST /admin/applications/{id}/reject`. Approved and rejected
-applications cannot be modified by this first version. Correction and appeal
-workflows will be added in a later milestone.
+1. **Applicant Sessions**:
+   - `Set-Cookie: solex_session=<token>; HttpOnly; SameSite=Lax; Path=/`
+   - Alternatively: `Authorization: Bearer <session_token>`
+2. **Admin Token**:
+   - Header: `Authorization: Bearer <ADMIN_TOKEN>`

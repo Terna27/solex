@@ -1,6 +1,46 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Solex | Business support programme</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Solex | Business Support Grant Programme</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
 <body>
-<aside class="sidebar"><a href="#home" class="brand"><span class="brandmark">s</span>solex<span class="branddot">.</span></a><p class="side-caption">BUSINESS SUPPORT PROGRAMME</p><nav aria-label="Main navigation"><a href="#home" data-page="home">◈ <span>Overview</span></a><a href="#apply" data-page="apply">＋ <span>Apply for support</span></a><a href="#status" data-page="status">◎ <span>My application</span></a><a href="#admin" data-page="admin">▦ <span>Admin workspace</span></a></nav><div class="side-note"><span class="small-label">A LITTLE SUPPORT.<br>A BIGGER POSSIBILITY.</span><p>Helping everyday businesses take their next step.</p><div class="line"></div><small>Free application · No access fee</small></div></aside>
-<div class="shell"><header><span>Small businesses. More possibilities.</span><span class="pill"><i></i> Local preview</span></header><div class="preview-note">Development preview — use fictional details. SMS and bank transfers are not live.</div><main id="main" tabindex="-1"></main><footer>SOLEX BUSINESS SUPPORT <span>₦75,000 monthly · Three months · Nationwide</span></footer></div><div id="toast" role="status" aria-live="polite"></div>
-</body></html>
+<aside class="sidebar">
+  <a href="#home" class="brand"><span class="brandmark">s</span>solex<span class="branddot">.</span></a>
+  <p class="side-caption">BUSINESS GRANT PROGRAMME</p>
+  <nav id="main-nav" aria-label="Main navigation">
+    <!-- Populated dynamically based on authentication state -->
+  </nav>
+  <div class="side-note">
+    <span class="small-label">A LITTLE SUPPORT.<br>A BIGGER POSSIBILITY.</span>
+    <p>Empowering Nigerian small enterprises and traders.</p>
+    <div class="line"></div>
+    <small id="side-commence-info">Commences 10 Dec 2026</small>
+  </div>
+</aside>
+
+<div class="shell">
+  <header>
+    <div id="header-user-status">Small businesses. More possibilities.</div>
+    <div class="header-actions">
+      <span class="pill"><i></i> <span id="app-mode-label">Local Prototype</span></span>
+      <span id="user-pill" class="pill user-pill hidden"></span>
+      <button id="header-logout-btn" class="btn secondary sm hidden" type="button">Sign out</button>
+    </div>
+  </header>
+  <div class="preview-note">
+    Development prototype — use fictional details. Real bank transfers and SMS are not live. ₦1,000 fee simulator active.
+  </div>
+  <main id="main" tabindex="-1"></main>
+  <footer>
+    SOLEX BUSINESS SUPPORT
+    <span>Category A: ₦250,000 · Category B: ₦500,000 · Commencement: 10 December 2026</span>
+  </footer>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

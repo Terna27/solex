@@ -154,12 +154,9 @@ func New(path string, capacity int) (*Service, error) {
 		}
 	}
 
-	// Default email sender: records in memory/db
+	// Default email sender: records in memory/db outbox (saved atomically during submission)
 	s.emailSender = NewDevelopmentOutboxSender(func(msg EmailMessage) error {
-		return s.mutate(func(db *database) error {
-			db.Emails = append(db.Emails, msg)
-			return nil
-		})
+		return nil
 	})
 
 	return s, nil

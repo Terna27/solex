@@ -1,113 +1,1751 @@
 'use strict';
-const main=document.querySelector('#main');
-let programme=null,adminToken='',appToken='',appID='',applications=[],selectedID='',viewEpoch=0;
-const escapeHTML=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const money=k=>'₦'+(k/100).toLocaleString('en-NG');
-const date=d=>new Date(d+'T12:00:00').toLocaleDateString('en-NG',{day:'numeric',month:'short',year:'numeric'});
-const badge=s=>`<span class="badge ${escapeHTML(s)}">${escapeHTML(s)}</span>`;
-const heading=(eyebrow,title,sub)=>`<div class="heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p class="muted">${sub}</p></div></div>`;
-async function api(path,{method='GET',body,token=''}={}){
- const headers={};if(body!==undefined)headers['Content-Type']='application/json';if(token)headers.Authorization='Bearer '+token;
- let r;try{r=await fetch('/api/v1'+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});}catch{throw Error('Cannot reach the server. Check that Go is running and try again.');}
- const data=await r.json();if(!r.ok)throw Error(data.error==='unauthorised'?'The admin token is incorrect. Please try again.':data.error==='application not found'?'Application not found. Check the application ID and access token.':data.error||'The request could not be completed.');return data;
-}
-function toast(text){const box=document.querySelector('#toast');box.textContent=text;box.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>box.style.display='none',5000);}
-async function action(form,fn){const buttons=form.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);const box=form.querySelector('[data-error]');if(box)box.innerHTML='';try{await fn();}catch(e){if(box)box.innerHTML=`<div class="error" role="alert">${escapeHTML(e.message)}</div>`;else toast(e.message);}finally{buttons.forEach(b=>b.disabled=false);}}
-function home(){
- main.innerHTML=heading('A NEXT STEP, TOGETHER','Room for your business to grow.','Practical support for the people who keep our communities moving.')+`
- <section class="hero"><div class="hero-copy"><span class="eyebrow">SOLEX BUSINESS SUPPORT</span><h1>Small business.<br><em>Bigger possibilities.</em></h1><p>Three months of support to help you restock, strengthen your business, and plan your next step.</p><div class="actions"><a class="btn light" href="#apply">Start an application <span>↗</span></a><a class="btn secondary" href="#status">Track application</a></div></div><div class="hero-art" aria-label="75,000 naira monthly for three months"><div class="orb"></div><div class="orb two"></div><div class="grant-card"><span class="eyebrow">YOUR NEXT CHAPTER</span><div class="amount">₦75,000</div><span>monthly business support</span><span class="stamp">3 MONTHS &nbsp; / &nbsp; ₦225,000 TOTAL<br>Free to apply. Free to access.</span></div></div></section>
- <div class="stats"><div class="stat"><small>Support per beneficiary</small><strong>₦225,000</strong><p>Across three monthly instalments</p></div><div class="stat"><small>Programme coverage</small><strong>Nationwide</strong><p>36 states and the FCT</p></div><div class="stat"><small>Application & access fee</small><strong>₦0</strong><p>No payment required to apply</p></div></div>
- <div class="section-head"><h2>A simple path to support</h2><span class="hint">For applicants aged 18+</span></div><div class="steps"><article class="card"><div class="step-number">01</div><h3>Tell us about your business</h3><p>Share your details, location, and the business you want to grow.</p></article><article class="card"><div class="step-number">02</div><h3>Application review</h3><p>Your application is assessed against programme requirements. Applying does not guarantee approval.</p></article><article class="card"><div class="step-number">03</div><h3>Plan your next step</h3><p>If approved, see your reference code and three scheduled instalments in your application.</p></article></div><div class="tags"><span class="tag">Market traders</span><span class="tag">POS businesses</span><span class="tag">Transport operators</span><span class="tag">Local shops</span><span class="tag">Small enterprises</span></div><p class="hint" style="margin-top:18px">Selection is independent of party membership, voting preference, or campaign participation.</p>`;
-}
 
-function profileFields(a={}){
- const fields=[['residential_address','Full residential address','Street, area and town',10,500],['business_name','Business / trading name','Use your trading name if unregistered',2,150],['business_address','Business address / operating location','Shop, market or usual operating area',5,500],['bank_name','Bank name','Enter the full name of your bank',2,100],['account_name','Account-holder name','Name as shown on the bank account',3,150],['account_number','Account number','10-digit account number',10,10]];
- return fields.map(([name,label,placeholder,min,max])=>`<label class="field ${name.includes('address')?'full':''}">${label}<input name="${name}" value="${escapeHTML(a[name]||'')}" required minlength="${min}" maxlength="${max}" placeholder="${placeholder}" ${name==='account_number'?'inputmode="numeric" pattern="[0-9]{10}" autocomplete="off"':''}></label>`).join('');
-}
-function apply(){
- main.innerHTML=heading('MAKE YOUR NEXT MOVE','Apply for business support','Your details, business, bank account and supporting images — in one place.')+`<div class="two-col"><form id="apply-form" class="card"><h2>1. Personal details</h2><p class="hint">All fields are required. Use fictional details and sample images in this local preview.</p><div class="form-grid"><label class="field">Full name<input name="full_name" required minlength="3" maxlength="150" autocomplete="name"></label><label class="field">Date of birth<input name="date_of_birth" type="date" required></label><label class="field">Phone number<input name="phone" type="tel" required pattern="\\+234[789][01][0-9]{8}" placeholder="+2348012345678" autocomplete="tel"><span class="hint">Use +234 instead of the first 0.</span></label><label class="field">Business type<select name="business_type" required><option value="">Select business type</option>${['Market trading','Retail shop','POS business','Transport / okada','Food business','Services','Other small business'].map(v=>`<option>${v}</option>`).join('')}</select></label><label class="field">State / FCT<select name="state" required><option value="">Select your state</option>${programme.states.map(v=>`<option>${escapeHTML(v)}</option>`).join('')}</select></label><label class="field">LGA / area council<input name="lga" required minlength="2" maxlength="100" placeholder="e.g. Makurdi"></label></div><hr class="divider"><h2>2. Address, business & bank details</h2><div class="form-grid">${profileFields()}<label class="field full">Tell us about your business<textarea name="business_description" required minlength="10" maxlength="2000" placeholder="What do you sell or do? How would this support help?"></textarea></label></div><div class="notice">Enter an account you own. Saving bank details does not verify account ownership. We never ask for your bank PIN, password, BVN, or banking OTP.</div><hr class="divider"><h2>3. Passport photo & supporting document</h2><p class="hint">Passport photo means a clear portrait photograph, not an international passport booklet. JPEG or PNG only; up to 5 MB and 12 million pixels per image.</p><div class="form-grid"><label class="field full">Passport photograph<input type="file" name="passport_file" required accept="image/jpeg,image/png"></label><label class="field">Supporting document type<select name="support_kind" required><option value="government_id">Government-issued ID card</option><option value="proof_of_address">Proof of address / utility bill</option></select></label><label class="field">ID card or proof-of-address image<input type="file" name="support_file" required accept="image/jpeg,image/png"></label></div><p class="hint">A utility bill may establish address but may not establish identity or age; the reviewer may need additional evidence.</p><label class="check"><input type="checkbox" name="consent" required><span>I agree to local storage and review of these fictional application details and sample images for testing.</span></label><div data-error></div><button class="btn" type="submit">Submit application & images →</button></form><aside class="card"><span class="eyebrow">APPLICATION CHECKLIST</span><h1>₦75,000</h1><p class="muted">monthly for three months</p><hr class="divider"><p class="compact">✓ Personal and business details<br>✓ Residential and business addresses<br>✓ Bank name and account details<br>✓ Passport photograph<br>✓ ID card OR proof of address</p><div class="notice">No application or access fee. Submission does not guarantee approval.</div><p class="hint">Keep your application ID and private access token after submitting. You can use My application to complete interrupted uploads.</p></aside></div>`;
- document.querySelector('#apply-form').onsubmit=e=>{e.preventDefault();action(e.currentTarget,async()=>{
-  const f=new FormData(e.target),passport=f.get('passport_file'),support=f.get('support_file');
-  for(const file of [passport,support]){if(!file.size||file.size>5*1024*1024||!['image/jpeg','image/png'].includes(file.type))throw Error('Select a JPEG or PNG for each image, up to 5 MB per file.');}
-  const body=Object.fromEntries([...f].filter(([k])=>!['passport_file','support_file','support_kind'].includes(k)));body.consent=f.has('consent');
-  const result=await api('/applications',{method:'POST',body});appID=result.application.id;appToken=result.access_token;
-  main.innerHTML=heading('APPLICATION SAVED','Keep your access details.','Your details are saved. Uploading the two supporting images…')+`<div class="card"><h2>Save these privately</h2><label class="field">Application ID<code class="key">${escapeHTML(appID)}</code></label><label class="field">Private access token<code class="key">${escapeHTML(appToken)}</code></label><p class="hint">These credentials stay in page memory only. Save them before closing or refreshing.</p><div id="upload-progress" role="status">Uploading images…</div><a href="#status" class="btn" style="margin-top:20px">View my application →</a></div>`;
-  const failures=[];const id=appID,token=appToken;
-  for(const [kind,file] of [['passport_photo',passport],[f.get('support_kind'),support]]){
-   const data=new FormData();data.set('kind',kind);data.set('file',file);
-   try{const res=await fetch('/api/v1/applications/'+encodeURIComponent(id)+'/documents',{method:'POST',headers:{Authorization:'Bearer '+token},body:data,signal:AbortSignal.timeout(30000)});const payload=await res.json();if(!res.ok)throw Error(payload.error||'Upload failed.');}catch(err){failures.push(kind+': '+err.message);}
+const main = document.querySelector('#main');
+const nav = document.querySelector('#main-nav');
+const headerUserStatus = document.querySelector('#header-user-status');
+const userPill = document.querySelector('#user-pill');
+const headerLogoutBtn = document.querySelector('#header-logout-btn');
+
+let programme = null;
+let currentUser = null;
+let currentProfile = null;
+let currentApp = null;
+let adminToken = sessionStorage.getItem('solex_admin_token') || '';
+let applications = [];
+let selectedAppID = '';
+let viewEpoch = 0;
+
+const escapeHTML = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = k => '₦' + (Number(k || 0) / 100).toLocaleString('en-NG');
+const dateFmt = d => {
+  if (!d) return 'TBD';
+  const parts = d.split('-');
+  if (parts.length === 3) {
+    const dt = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])));
+    return dt.toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
   }
-  const progress=document.querySelector('#upload-progress');if(progress)progress.innerHTML=failures.length?`<div class="error">Your application is saved, but some uploads need attention: ${escapeHTML(failures.join('; '))}. Open My application to upload the missing images. Do not submit another application.</div>`:'<div class="notice">Both images are uploaded. Your application is ready for review.</div>';
- });};
-}
-function details(a){return `<dl class="detail-list">${[['Applicant',a.full_name],['Date of birth',a.date_of_birth],['Phone',a.phone],['Location',a.lga+', '+a.state],['Residential address',a.residential_address],['Business / trading name',a.business_name],['Business type',a.business_type],['Business address',a.business_address],['Bank name',a.bank_name],['Account-holder name',a.account_name],['Account number',a.account_number]].map(([label,value])=>`<div><dt>${label}</dt><dd>${escapeHTML(value||'Not yet provided')}</dd></div>`).join('')}</dl><p class="compact">${escapeHTML(a.business_description)}</p><p class="hint">Bank details are applicant-provided; account ownership requires separate verification.</p>`;}
-function schedule(a){return `<h3>Monthly support schedule</h3>${a.instalments?.length?a.instalments.map(p=>`<div class="payment"><div><strong>${money(p.amount_kobo)}</strong><small>Instalment ${p.number} · ${date(p.due_date)}</small></div>${badge(p.status)}</div>`).join(''):'<p class="muted compact">Your schedule will appear here after approval.</p>'}<p class="hint" style="margin-top:16px">Scheduled amounts are not completed transfers. Live payments are not enabled in this preview.</p>`;}
-async function status(){
- main.innerHTML=heading('YOUR APPLICATION','Keep track of your next step.','View your review status, reference code, and support schedule.')+`<form id="lookup" class="card"><div class="form-grid"><label class="field">Application ID<input name="id" required value="${escapeHTML(appID)}" autocomplete="off" spellcheck="false"></label><label class="field">Private access token<input name="token" type="password" required autocomplete="off" value="${escapeHTML(appToken)}"></label></div><div data-error></div><div class="actions"><button class="btn">View application</button><button type="button" id="forget" class="btn secondary">Clear access details</button></div></form><div id="status-result"></div><div id="profile-editor"></div><div id="app-documents"></div>`;
- document.querySelector('#forget').onclick=()=>{appID='';appToken='';status();};
- const form=document.querySelector('#lookup');form.onsubmit=e=>{e.preventDefault();action(form,async()=>{const f=new FormData(form);const id=f.get('id').trim(),token=f.get('token').trim();const a=await api('/applications/'+encodeURIComponent(id),{token});appID=id;appToken=token;const target=document.querySelector('#status-result');if(!target)return;target.innerHTML=`<div class="two-col" style="margin-top:24px"><section class="card"><div class="heading"><h2>Application summary</h2>${badge(a.status)}</div>${details(a)}${a.reason?`<div class="notice">Review note: ${escapeHTML(a.reason)}</div>`:''}${a.reference_code?`<span class="hint">Approval reference · not a password</span><code class="key">${escapeHTML(a.reference_code)}</code>`:'<div class="notice">Your application is waiting for review. No payment is needed to continue.</div>'}</section><section class="card">${schedule(a)}</section></div>`;renderProfile(a);renderDocuments(a,false);});};
- if(appID&&appToken)form.requestSubmit();
-}
-function admin(){
- if(!adminToken){main.innerHTML=heading('PROGRAMME OPERATIONS','Admin workspace','Review applications and manage the support schedule.')+`<form id="admin-login" class="card login"><span class="eyebrow">AUTHORISED STAFF</span><h2 style="margin-top:12px">Access your workspace</h2><p class="muted compact">Use the admin token configured when starting the Go server.</p><label class="field">Admin token<input name="token" type="password" required autocomplete="off"></label><div data-error></div><button class="btn" style="margin-top:18px">Open workspace →</button><p class="hint" style="margin-top:15px">Your token stays in page memory and is cleared when you sign out or refresh.</p></form>`;document.querySelector('#admin-login').onsubmit=e=>{e.preventDefault();action(e.currentTarget,async()=>{const token=new FormData(e.target).get('token').trim();const list=await api('/admin/applications',{token});adminToken=token;applications=list;adminDashboard();});};return;}
- loadAdmin();
-}
-async function loadAdmin(){try{applications=await api('/admin/applications',{token:adminToken});if(location.hash==='#admin')adminDashboard();}catch(e){toast(e.message);}}
-function adminDashboard(){
- const approved=applications.filter(a=>a.status==='approved').length;
- main.innerHTML=heading('PROGRAMME OPERATIONS','A clearer view of every application.','Review submissions and manage each beneficiary’s next step.')+`<div class="actions" style="margin:0 0 20px"><button id="refresh" class="btn secondary">Refresh applications</button><button id="logout" class="btn secondary">Sign out</button></div><div class="stats"><div class="stat"><small>Total applications</small><strong>${applications.length}</strong><p>All submitted applications</p></div><div class="stat"><small>Awaiting review</small><strong>${applications.filter(a=>a.status==='submitted').length}</strong><p>Applications to assess</p></div><div class="stat"><small>Approved support</small><strong>${money(approved*22500000)}</strong><p>Scheduled total · not paid</p></div></div><section class="card"><div class="section-head" style="margin-top:0"><h2>Applications</h2><span class="hint">${approved} approved</span></div><div class="toolbar"><input id="search" aria-label="Search applicants" placeholder="Search by name, state or business…"><select id="filter" aria-label="Filter by status"><option value="">All statuses</option><option>submitted</option><option>approved</option><option>rejected</option></select></div><div id="rows"></div></section><div id="review"></div><div id="admin-documents"></div>`;
- document.querySelector('#refresh').onclick=loadAdmin;document.querySelector('#logout').onclick=()=>{adminToken='';applications=[];selectedID='';admin();};document.querySelector('#search').oninput=renderRows;document.querySelector('#filter').onchange=renderRows;renderRows();if(selectedID)review(selectedID);
-}
-function renderRows(){const q=document.querySelector('#search').value.toLowerCase(),filter=document.querySelector('#filter').value;const rows=applications.filter(a=>(!filter||a.status===filter)&&[a.full_name,a.state,a.business_type].join(' ').toLowerCase().includes(q));document.querySelector('#rows').innerHTML=rows.length?`<div class="table-wrap"><table><thead><tr><th>APPLICANT</th><th>LOCATION</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>${rows.map(a=>`<tr><td>${escapeHTML(a.full_name)}<small>${escapeHTML(a.business_type)}</small></td><td>${escapeHTML(a.state)}<small>${escapeHTML(a.lga)}</small></td><td>${badge(a.status)}</td><td><button class="btn secondary" data-review="${escapeHTML(a.id)}">Review →</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No applications match this view.</div>';document.querySelectorAll('[data-review]').forEach(b=>b.onclick=()=>{review(b.dataset.review);document.querySelector('#review').scrollIntoView({behavior:'smooth',block:'start'});});}
-function review(id){
- selectedID=id;const a=applications.find(a=>a.id===id);if(!a)return;const keys={phone:'Phone number',identity_and_age:'Identity and minimum age',address:'Residential address',business:'Business eligibility',bank_account_ownership:'Bank account ownership'};
- document.querySelector('#review').innerHTML=`<section class="card" style="margin-top:24px"><div class="heading"><div><span class="eyebrow">APPLICATION REVIEW</span><h2>${escapeHTML(a.full_name)}</h2></div>${badge(a.status)}</div>${details(a)}${a.status==='submitted'?`<div class="notice">Sandbox review: these controls record simulated checks only. They do not verify documents or bank accounts.</div><div class="two-col"><form id="checks-form"><h3>Verification checklist</h3>${Object.entries(keys).map(([key,label])=>`<label class="check"><input type="checkbox" name="${key}" ${a.checks[key]?'checked':''}><span>${label}</span></label>`).join('')}<div data-error></div><button class="btn secondary">Save review checks</button></form><div><form id="approve-form"><h3>Approval & schedule</h3><label class="field">First scheduled transfer date<input type="date" name="date" required></label><p class="hint" style="margin-top:10px">Creates three monthly instalments. Save all completed checks before approving.</p><div data-error></div><button class="btn">Approve application</button></form><hr class="divider"><form id="reject-form"><label class="field">Reason for rejection<textarea name="reason" minlength="5" maxlength="500" required placeholder="Explain the decision clearly."></textarea></label><div data-error></div><button class="btn danger" style="margin-top:12px">Reject application</button></form></div></div>`:`${a.reason?`<div class="notice">${escapeHTML(a.reason)}</div>`:''}${a.reference_code?`<code class="key">${escapeHTML(a.reference_code)}</code>`:''}${schedule(a)}`}</section>`;
- renderDocuments(a,true);
- if(a.status!=='submitted')return;
- document.querySelector('#checks-form').onsubmit=e=>{e.preventDefault();action(e.currentTarget,async()=>{const form=new FormData(e.target);const checks=Object.fromEntries(Object.keys(keys).map(k=>[k,form.has(k)]));await api('/admin/applications/'+id+'/checks',{method:'PUT',token:adminToken,body:checks});a.checks=checks;toast('Review checks saved.');});};
- document.querySelector('#approve-form').onsubmit=e=>{e.preventDefault();action(e.currentTarget,async()=>{await api('/admin/applications/'+id+'/approve',{method:'POST',token:adminToken,body:{first_due_date:new FormData(e.target).get('date')}});toast('Approved. Instalments scheduled; SMS is awaiting provider setup.');await loadAdmin();});};
- document.querySelector('#reject-form').onsubmit=e=>{e.preventDefault();action(e.currentTarget,async()=>{await api('/admin/applications/'+id+'/reject',{method:'POST',token:adminToken,body:{reason:new FormData(e.target).get('reason')}});toast('Application rejected with a review reason.');await loadAdmin();});};
-}
-async function route(){const epoch=++viewEpoch;const page=location.hash.slice(1)||'home';document.querySelectorAll('nav a').forEach(a=>{const active=a.dataset.page===page;a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});if(!programme){main.innerHTML='<div class="empty">Loading programme…</div>';try{programme=await api('/programme');}catch(e){main.innerHTML=`<div class="error">${escapeHTML(e.message)}</div><button class="btn" id="retry">Try again</button>`;document.querySelector('#retry').onclick=route;return;}}if(epoch!==viewEpoch)return;({home,apply,status,admin}[page]||home)();}
-window.addEventListener('hashchange',route);route();
+  return d;
+};
 
+const badge = s => `<span class="badge ${escapeHTML(s || 'draft')}">${escapeHTML(String(s || 'draft').replace(/_/g, ' '))}</span>`;
+const heading = (eyebrow, title, sub) => `<div class="heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p class="muted">${sub}</p></div></div>`;
 
-function renderDocuments(a,isAdmin){
- const host=document.querySelector(isAdmin?'#admin-documents':'#app-documents');if(!host)return;
- const docs=a.documents||[];
- const labels={passport_photo:'Passport photograph',government_id:'Government-issued ID',proof_of_address:'Proof of address / utility bill'};
- host.innerHTML=`<section class="card" style="margin-top:24px"><span class="eyebrow">SUPPORTING DOCUMENTS</span><h2 style="margin-top:8px">${isAdmin?'Review applicant documents':'Your supporting documents'}</h2><p class="hint">Private images · JPEG or PNG · Up to 5 MB and 12 million pixels per file. Use sample documents only in this local preview.</p><div>${docs.length?docs.map(d=>`<div class="payment"><div><strong>${labels[d.kind]||escapeHTML(d.kind)}</strong><small>${Math.ceil(d.size_bytes/1024)} KB · Uploaded ${escapeHTML(new Date(d.uploaded_at).toLocaleDateString())}</small></div><button type="button" class="btn secondary" data-document="${escapeHTML(d.id)}">View image</button></div>`).join(''):'<div class="notice">No documents uploaded yet.</div>'}</div>${!isAdmin&&a.status==='submitted'?`<form id="upload-form" style="margin-top:24px"><div class="form-grid"><label class="field">Document type<select name="kind" required><option value="passport_photo">Passport photograph</option><option value="government_id">Government-issued ID</option><option value="proof_of_address">Proof of address</option></select></label><label class="field">Select image<input name="file" type="file" accept="image/jpeg,image/png" required></label></div><p class="hint" style="margin-top:12px">Uploading the same type again replaces the previous image and resets its review check. Uploading is not approval.</p><div data-error></div><button class="btn">Upload document</button></form>`:''}</section>`;
- host.querySelectorAll('[data-document]').forEach(button=>button.onclick=async()=>{
-  button.disabled=true;let url='';
-  try{
-   const token=isAdmin?adminToken:appToken;
-   const prefix=isAdmin?'/admin':'';
-   const res=await fetch('/api/v1'+prefix+'/applications/'+encodeURIComponent(a.id)+'/documents/'+encodeURIComponent(button.dataset.document),{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(15000)});
-   if(!res.ok)throw Error('Could not open the document. Refresh the application and check your access.');
-   const blob=await res.blob();
-   if(!['image/jpeg','image/png'].includes(blob.type))throw Error('Unexpected document format.');
-   // Do not reopen private content after navigation or sign-out.
-   if(!host.isConnected||(isAdmin?adminToken:appToken)!==token)return;
-   url=URL.createObjectURL(blob);
-   const dialog=document.createElement('dialog');dialog.className='document-dialog';
-   dialog.innerHTML='<div class="heading"><h3>Private document preview</h3><button class="btn secondary" type="button">Close</button></div><img alt="Uploaded supporting document">';
-   dialog.querySelector('img').src=url;document.body.append(dialog);
-   dialog.querySelector('button').onclick=()=>dialog.close();
-   dialog.addEventListener('close',()=>{URL.revokeObjectURL(url);dialog.remove();},{once:true});dialog.showModal();
-  }catch(e){if(url)URL.revokeObjectURL(url);toast(e.message);}finally{button.disabled=false;}
- });
- const form=host.querySelector('#upload-form');if(form)form.onsubmit=e=>{e.preventDefault();action(form,async()=>{
-  const body=new FormData(form),file=body.get('file');if(!file.size||file.size>5*1024*1024)throw Error('Select a JPEG or PNG image no larger than 5 MB.');
-  const token=appToken,id=a.id;
-  let res;try{res=await fetch('/api/v1/applications/'+encodeURIComponent(id)+'/documents',{method:'POST',headers:{Authorization:'Bearer '+token},body,signal:AbortSignal.timeout(30000)});}catch{throw Error('Upload interrupted. Refresh your application to check whether it was saved.');}
-  const result=await res.json();if(!res.ok)throw Error(result.error||'Upload failed.');
-  const updated=await api('/applications/'+encodeURIComponent(id),{token});
-  if(host.isConnected&&appToken===token){renderDocuments(updated,false);toast('Document uploaded. It is ready for administrator review.');}
- });};
+async function api(path, { method = 'GET', body, token = '' } = {}) {
+  const headers = {};
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (token) headers.Authorization = 'Bearer ' + token;
+
+  const baseUrl = window.SOLEX_API_URL || '/api/v1';
+  let r;
+  try {
+    r = await fetch(baseUrl + path, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: 'same-origin',
+      signal: AbortSignal.timeout(20000)
+    });
+  } catch (err) {
+    throw Error('Cannot reach the Solex server. Check your connection or that the Go backend is running.');
+  }
+
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    if (r.status === 401 && path === '/auth/me') return null;
+    throw Error(data.error || 'The request could not be completed.');
+  }
+  return data;
 }
 
-function renderProfile(a){
- const host=document.querySelector('#profile-editor');if(!host||a.status!=='submitted')return;
- host.innerHTML=`<form id="profile-form" class="card" style="margin-top:24px"><h2>Complete or update your details</h2><p class="hint">Use this to add bank and address details to an earlier application. Changes reset the relevant review checks.</p><div class="form-grid">${profileFields(a)}</div><div data-error></div><button class="btn" style="margin-top:18px">Save details</button></form>`;
- const form=host.querySelector('form');form.onsubmit=e=>{e.preventDefault();action(form,async()=>{await api('/applications/'+encodeURIComponent(a.id)+'/profile',{method:'PUT',token:appToken,body:Object.fromEntries(new FormData(form))});toast('Details saved. Relevant checks must be reviewed again.');status();});};
+function toast(text) {
+  const box = document.querySelector('#toast');
+  box.textContent = text;
+  box.style.display = 'block';
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { box.style.display = 'none'; }, 5000);
 }
+
+async function action(form, fn) {
+  const buttons = form.querySelectorAll('button');
+  buttons.forEach(b => { b.disabled = true; });
+  const box = form.querySelector('[data-error]');
+  if (box) box.innerHTML = '';
+  try {
+    await fn();
+  } catch (e) {
+    if (box) box.innerHTML = `<div class="error" role="alert">${escapeHTML(e.message)}</div>`;
+    else toast(e.message);
+  } finally {
+    buttons.forEach(b => { b.disabled = false; });
+  }
+}
+
+function pwField(name, label = 'Password', minlength = 8) {
+  return `
+    <label class="field">${label}
+      <div class="pw-wrap">
+        <input name="${name}" type="password" required minlength="${minlength}" autocomplete="current-password">
+        <button type="button" class="pw-toggle" aria-label="Toggle password visibility">Show</button>
+      </div>
+    </label>
+  `;
+}
+
+function initPasswordToggles(container = document) {
+  container.querySelectorAll('.pw-toggle').forEach(btn => {
+    btn.onclick = () => {
+      const input = btn.previousElementSibling;
+      if (!input) return;
+      const isPw = input.type === 'password';
+      input.type = isPw ? 'text' : 'password';
+      btn.textContent = isPw ? 'Hide' : 'Show';
+    };
+  });
+}
+
+function renderNav() {
+  const page = location.hash.slice(1) || 'home';
+  const isAuth = !!currentUser;
+
+  let items = [
+    { id: 'home', label: '◈ Overview' },
+    { id: 'about', label: 'ℹ About Programme' },
+    { id: 'eligibility', label: '✓ Eligibility' }
+  ];
+
+  if (isAuth) {
+    items.push({ id: 'dashboard', label: '◎ Applicant Dashboard' });
+    items.push({ id: 'apply', label: '＋ Apply for Grant' });
+  } else {
+    items.push({ id: 'register', label: '＋ Create Account' });
+    items.push({ id: 'login', label: '→ Sign In' });
+  }
+
+  items.push({ id: 'contact', label: '✉ Contact Desk' });
+  items.push({ id: 'admin', label: '▦ Admin Workspace' });
+
+  nav.innerHTML = items.map(item => `
+    <a href="#${item.id}" data-page="${item.id}" class="${page === item.id ? 'active' : ''}">
+      <span>${escapeHTML(item.label)}</span>
+    </a>
+  `).join('');
+
+  if (isAuth) {
+    headerUserStatus.innerHTML = `Welcome, <strong>${escapeHTML(currentUser.full_name)}</strong>`;
+    userPill.textContent = currentUser.email;
+    userPill.classList.remove('hidden');
+    headerLogoutBtn.classList.remove('hidden');
+  } else {
+    headerUserStatus.textContent = 'Small businesses. More possibilities.';
+    userPill.classList.add('hidden');
+    headerLogoutBtn.classList.add('hidden');
+  }
+}
+
+headerLogoutBtn.onclick = async () => {
+  try {
+    await api('/auth/logout', { method: 'POST' });
+  } catch (_) {}
+  currentUser = null;
+  currentProfile = null;
+  currentApp = null;
+  toast('Signed out successfully.');
+  location.hash = '#home';
+  route();
+};
+
+// ----------------- PAGES -----------------
+
+function home() {
+  const isAuth = !!currentUser;
+  main.innerHTML = heading('A NEXT STEP, TOGETHER', 'Room for your Nigerian business to grow.', 'Practical one-time grant support for everyday business owners and formal enterprises.') + `
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow">SOLEX BUSINESS GRANT PROGRAMME</span>
+        <h1>Small business.<br><em>Bigger possibilities.</em></h1>
+        <p>One-time non-repayable grant funding to help Nigerian entrepreneurs restock goods, upgrade tools, and expand local commerce.</p>
+        <div class="actions">
+          ${isAuth
+            ? `<a class="btn light" href="#dashboard">Go to Dashboard <span>↗</span></a><a class="btn secondary" href="#apply">Apply for Grant</a>`
+            : `<a class="btn light" href="#register">Create Account to Apply <span>↗</span></a><a class="btn secondary" href="#login">Sign In</a>`
+          }
+        </div>
+      </div>
+      <div class="hero-art" aria-label="Solex grant categories">
+        <div class="orb"></div>
+        <div class="orb two"></div>
+        <div class="grant-card">
+          <span class="eyebrow">TWO GRANT TIERS</span>
+          <div class="amount">₦500,000</div>
+          <span>Registered Business Grant</span>
+          <span class="stamp">
+            COMMENCING: 10 DEC 2026<br>
+            Disbursement: Dec 2026<br>
+            One-time direct business support
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-head">
+      <h2>Two Grant Categories</h2>
+      <span class="hint">Commencing 10 December 2026 · Selection requires review</span>
+    </div>
+
+    <div class="category-grid">
+      <div class="category-card">
+        <span class="cat-badge">CATEGORY A</span>
+        <div>
+          <span class="eyebrow">UNREGISTERED BUSINESSES</span>
+          <div class="amount">₦250,000</div>
+          <p class="muted">One-time business support grant</p>
+          <hr class="divider">
+          <p class="compact">
+            ✓ Designed for everyday market traders, artisans, POS operators, and informal micro-businesses.<br>
+            ✓ CAC registration certificate: <strong>Not required</strong>.<br>
+            ✓ Paid directly as a one-time grant disbursement upon administrative approval.<br>
+            ✓ Valid 11-digit NIN and supported Nigerian bank account required.
+          </p>
+        </div>
+        <div class="actions" style="margin-top:20px">
+          <a class="btn secondary" href="${isAuth ? '#apply' : '#register'}">Apply for ₦250,000 →</a>
+        </div>
+      </div>
+
+      <div class="category-card featured">
+        <span class="cat-badge">CATEGORY B</span>
+        <div>
+          <span class="eyebrow">REGISTERED BUSINESSES</span>
+          <div class="amount">₦500,000</div>
+          <p class="muted">One-time enterprise support grant</p>
+          <hr class="divider">
+          <p class="compact">
+            ✓ Designed for registered Nigerian micro and small enterprises with Corporate Affairs Commission (CAC) status.<br>
+            ✓ Valid CAC registration number: <strong>Required</strong>.<br>
+            ✓ CAC registration certificate upload: <strong>Required</strong>.<br>
+            ✓ Admin verification of business credentials is mandatory before grant award.
+          </p>
+        </div>
+        <div class="actions" style="margin-top:20px">
+          <a class="btn" href="${isAuth ? '#apply' : '#register'}">Apply for ₦500,000 →</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <small>Programme Commencement</small>
+        <strong>10 Dec 2026</strong>
+        <p>Applications currently being received for review</p>
+      </div>
+      <div class="stat">
+        <small>Target Beneficiaries</small>
+        <strong>Nationwide</strong>
+        <p>All 36 states and the Federal Capital Territory</p>
+      </div>
+      <div class="stat">
+        <small>Application Processing Fee</small>
+        <strong>₦1,000</strong>
+        <p>Administrative review fee per submitted application</p>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <h2>How the Application Journey Works</h2>
+      <span class="hint">Strictly merit and eligibility-based</span>
+    </div>
+
+    <div class="steps">
+      <article class="card">
+        <div class="step-number">01</div>
+        <h3>Create Your Account</h3>
+        <p>Register with your name, phone, and secure password. Complete your personal profile with your 11-digit NIN.</p>
+      </article>
+      <article class="card">
+        <div class="step-number">02</div>
+        <h3>Select Business Category</h3>
+        <p>Choose Unregistered (₦250k) or Registered (₦500k). Upload required identity and CAC certificates.</p>
+      </article>
+      <article class="card">
+        <div class="step-number">03</div>
+        <h3>Review & Assessment</h3>
+        <p>Review disclosures and process the ₦1,000 processing fee. Track application status via your dashboard.</p>
+      </article>
+    </div>
+
+    <div class="tags">
+      <span class="tag">Market traders</span>
+      <span class="tag">POS businesses</span>
+      <span class="tag">Retail shopkeepers</span>
+      <span class="tag">Food and catering</span>
+      <span class="tag">Agribusiness</span>
+      <span class="tag">Registered SMEs</span>
+    </div>
+
+    <p class="hint" style="margin-top:22px">
+      Disclaimer: Submission of an application and payment of the processing fee does not constitute grant approval. Selection is governed by administrative verification, document authenticity, and programme capacity.
+    </p>
+  `;
+}
+
+function about() {
+  main.innerHTML = heading('PROGRAMME OVERVIEW', 'About the Solex Grant Initiative', 'Strengthening local commercial resilience and economic growth across Nigeria.') + `
+    <div class="two-col">
+      <section class="card">
+        <h2>Mission and Purpose</h2>
+        <p>The Solex Business Grant Programme was instituted to provide direct, non-repayable capital injections to hardworking Nigerian micro and small business owners.</p>
+        <p>Recognizing the differing stages of Nigerian business formalization, the programme provides two structured grant tiers:</p>
+        <ul>
+          <li><strong>Category A (Unregistered Businesses — ₦250,000)</strong>: Direct support for informal businesses, market traders, and craftsmen without CAC incorporation.</li>
+          <li><strong>Category B (Registered Businesses — ₦500,000)</strong>: Scaled funding for formal enterprises with authenticated CAC corporate registrations.</li>
+        </ul>
+        <div class="notice">
+          <strong>Important Schedule:</strong> The programme commences on <strong>10 December 2026</strong>. Disbursements are scheduled for December 2026 following thorough verification.
+        </div>
+        <h3>Governance & Fair Selection</h3>
+        <p>All applications undergo independent administrative review. Grant allocation is conducted regardless of party affiliation, religious background, or campaign participation. Every applicant must satisfy NIN validation and account ownership checks.</p>
+      </section>
+
+      <aside class="card">
+        <span class="eyebrow">KEY PROGRAMME METRICS</span>
+        <hr class="divider">
+        <p class="compact">
+          <strong>Commencement Date:</strong> 10 December 2026<br>
+          <strong>Disbursement Window:</strong> December 2026<br>
+          <strong>Tier A Amount:</strong> ₦250,000 (one-time)<br>
+          <strong>Tier B Amount:</strong> ₦500,000 (one-time)<br>
+          <strong>Processing Fee:</strong> ₦1,000 per application<br>
+          <strong>Coverage:</strong> All 36 States + FCT
+        </p>
+        <div class="actions">
+          <a class="btn light" href="#eligibility">Check Eligibility Criteria →</a>
+        </div>
+      </aside>
+    </div>
+  `;
+}
+
+function eligibility() {
+  main.innerHTML = heading('QUALIFICATION REQUIREMENTS', 'Programme Eligibility Guidelines', 'Carefully review the criteria before submitting your application.') + `
+    <div class="two-col">
+      <section class="card">
+        <h2>General Eligibility Criteria</h2>
+        <p>To be considered for either grant category, an applicant must satisfy all of the following baseline requirements:</p>
+        <div class="detail-list">
+          <div><dt>Age Requirement</dt><dd>Must be at least 18 years of age at the time of application.</dd></div>
+          <div><dt>Nationality & Residence</dt><dd>Nigerian citizen residing and operating a business in Nigeria.</dd></div>
+          <div><dt>National Identification</dt><dd>Valid 11-digit National Identification Number (NIN).</dd></div>
+          <div><dt>Bank Account</dt><dd>Active Nigerian deposit-money bank account in the applicant's name (wallets excluded).</dd></div>
+          <div><dt>Identity Verification</dt><dd>Clear passport photograph and valid government ID or proof of address.</dd></div>
+          <div><dt>Processing Fee</dt><dd>Completed ₦1,000 application verification fee.</dd></div>
+        </div>
+
+        <hr class="divider">
+        <h2>Category-Specific Criteria</h2>
+        <h3>Category A: Unregistered Businesses (₦250,000)</h3>
+        <p>Open to informal traders, artisans, food vendors, and service providers. CAC incorporation is not required. Applicants must provide details of their business location and operating history.</p>
+
+        <h3>Category B: Registered Businesses (₦500,000)</h3>
+        <p>Open to formally incorporated sole proprietorships, partnerships, or limited liability companies. Applicants must submit their valid CAC Registration Number and upload a legible CAC certificate.</p>
+      </section>
+
+      <aside class="card">
+        <span class="eyebrow">WHAT YOU NEED TO APPLY</span>
+        <hr class="divider">
+        <p class="compact">
+          1. 11-digit NIN<br>
+          2. Portrait photograph (JPEG/PNG, max 5MB)<br>
+          3. Government ID OR Utility bill<br>
+          4. Commercial bank account details<br>
+          5. CAC Certificate (Tier B only)<br>
+          6. ₦1,000 processing fee
+        </p>
+        <div class="notice">
+          <strong>Notice:</strong> Document submission does not constitute independent verification. Administrative checks remain mandatory.
+        </div>
+        <a class="btn" href="#register">Start Account Registration →</a>
+      </aside>
+    </div>
+  `;
+}
+
+function contact() {
+  main.innerHTML = heading('GET IN TOUCH', 'Programme Administration & Support', 'Questions about requirements, account access, or application status?') + `
+    <div class="two-col">
+      <section class="card">
+        <h2>Solex Support Desk</h2>
+        <p>Our dedicated support team is available to assist applicants with inquiries regarding business categories, document formats, and application tracking.</p>
+        <div class="detail-list">
+          <div><dt>Programme Operator</dt><dd>Solex Business Grant Programme Administration Committee</dd></div>
+          <div><dt>Official Email</dt><dd><a href="mailto:support@solex.ng">support@solex.ng</a></dd></div>
+          <div><dt>Physical Desk</dt><dd>Plot 12 Broad Street, Lagos Island, Lagos State</dd></div>
+          <div><dt>Operating Hours</dt><dd>Monday – Friday: 8:00 AM – 5:00 PM (WAT)</dd></div>
+        </div>
+        <div class="notice warn">
+          <strong>Security Warning:</strong> Solex officials will never ask for your bank account PIN, ATM card details, banking OTP, or account password.
+        </div>
+      </section>
+
+      <aside class="card">
+        <span class="eyebrow">SEND A DIRECT INQUIRY</span>
+        <form id="contact-form" style="margin-top:14px">
+          <label class="field">Your Name<input name="name" required placeholder="Full name"></label>
+          <label class="field">Your Email<input name="email" type="email" required placeholder="you@example.ng"></label>
+          <label class="field">Message<textarea name="message" required minlength="10" placeholder="How can we assist you?"></textarea></label>
+          <div data-error></div>
+          <button class="btn" style="margin-top:12px">Send Message</button>
+        </form>
+      </aside>
+    </div>
+  `;
+  const form = document.querySelector('#contact-form');
+  if (form) {
+    form.onsubmit = e => {
+      e.preventDefault();
+      action(form, async () => {
+        toast('Thank you. Your message has been recorded. Our team will contact you via email.');
+        form.reset();
+      });
+    };
+  }
+}
+
+function register() {
+  main.innerHTML = heading('GET STARTED', 'Create an Applicant Account', 'Register to apply for the Solex Business Grant Programme.') + `
+    <div class="login">
+      <form id="register-form" class="card">
+        <span class="eyebrow">APPLICANT REGISTRATION</span>
+        <h2 style="margin-top:10px">Create your account</h2>
+        <p class="muted compact">All fields are required. Enter your legal personal information.</p>
+
+        <label class="field">Full Legal Name
+          <input name="full_name" required minlength="3" maxlength="150" placeholder="e.g. Halima Danjuma" autocomplete="name">
+        </label>
+
+        <label class="field">Email Address
+          <input name="email" type="email" required placeholder="you@example.ng" autocomplete="email">
+        </label>
+
+        <label class="field">Nigerian Phone Number
+          <input name="phone" type="tel" required placeholder="+2348012345678 or 08012345678" autocomplete="tel">
+          <span class="hint">Nigerian international (+234) or standard 11-digit format.</span>
+        </label>
+
+        ${pwField('password', 'Choose Password (min 8 characters)', 8)}
+        ${pwField('confirm_password', 'Confirm Password', 8)}
+
+        <label class="check">
+          <input type="checkbox" name="terms" required>
+          <span>I confirm the information provided is accurate and agree to Solex platform terms.</span>
+        </label>
+
+        <div data-error></div>
+        <button class="btn" style="width:100%;margin-top:10px" type="submit">Create Account →</button>
+
+        <p class="hint" style="text-align:center;margin-top:20px">
+          Already have an account? <a href="#login" style="color:var(--green);font-weight:600">Sign in here</a>.
+        </p>
+      </form>
+    </div>
+  `;
+  initPasswordToggles();
+
+  const form = document.querySelector('#register-form');
+  form.onsubmit = e => {
+    e.preventDefault();
+    action(form, async () => {
+      const fd = new FormData(form);
+      const body = {
+        full_name: fd.get('full_name').trim(),
+        email: fd.get('email').trim(),
+        phone: fd.get('phone').trim(),
+        password: fd.get('password'),
+        confirm_password: fd.get('confirm_password')
+      };
+      const res = await api('/auth/register', { method: 'POST', body });
+      currentUser = res.user;
+      toast('Account created! Welcome to Solex.');
+      location.hash = '#dashboard';
+      route();
+    });
+  };
+}
+
+function login() {
+  main.innerHTML = heading('ACCOUNT ACCESS', 'Sign In to Your Workspace', 'Manage your profile, grant application, and review status.') + `
+    <div class="login">
+      <form id="login-form" class="card">
+        <span class="eyebrow">APPLICANT PORTAL</span>
+        <h2 style="margin-top:10px">Sign in to your account</h2>
+        <p class="muted compact">Enter your registered email and password.</p>
+
+        <label class="field">Email Address
+          <input name="email" type="email" required placeholder="you@example.ng" autocomplete="email">
+        </label>
+
+        ${pwField('password', 'Password')}
+
+        <div data-error></div>
+        <button class="btn" style="width:100%;margin-top:14px" type="submit">Sign In →</button>
+
+        <p class="hint" style="text-align:center;margin-top:20px">
+          Do not have an account yet? <a href="#register" style="color:var(--green);font-weight:600">Register here</a>.
+        </p>
+      </form>
+    </div>
+  `;
+  initPasswordToggles();
+
+  const form = document.querySelector('#login-form');
+  form.onsubmit = e => {
+    e.preventDefault();
+    action(form, async () => {
+      const fd = new FormData(form);
+      const body = {
+        email: fd.get('email').trim(),
+        password: fd.get('password')
+      };
+      const res = await api('/auth/login', { method: 'POST', body });
+      currentUser = res.user;
+      toast('Welcome back, ' + currentUser.full_name + '!');
+      location.hash = '#dashboard';
+      route();
+    });
+  };
+}
+
+async function dashboard() {
+  if (!currentUser) {
+    location.hash = '#login';
+    return;
+  }
+
+  main.innerHTML = '<div class="empty">Loading your dashboard…</div>';
+
+  try {
+    currentProfile = await api('/profile');
+    currentApp = await api('/applications/current').catch(() => null);
+  } catch (err) {
+    main.innerHTML = `<div class="error">${escapeHTML(err.message)}</div>`;
+    return;
+  }
+
+  const p = currentProfile || {};
+  const hasProfile = p.nin && p.nin.length === 11 && p.business_name;
+  const hasApp = currentApp && currentApp.id;
+
+  let appCard = '';
+  if (hasApp) {
+    const a = currentApp;
+    const catLabel = a.category === 'registered' ? 'Registered Business' : 'Unregistered Business';
+    const docs = a.documents || [];
+
+    appCard = `
+      <section class="card" style="margin-top:24px">
+        <div class="heading">
+          <div>
+            <span class="eyebrow">APPLICATION REFERENCE</span>
+            <h2>${escapeHTML(a.reference_code || a.id)}</h2>
+            <p class="muted">${catLabel} · Potential Grant: <strong>${money(a.grant_amount_kobo)}</strong></p>
+          </div>
+          ${badge(a.status)}
+        </div>
+
+        <div class="detail-list">
+          <div><dt>Business Category</dt><dd>${catLabel}</dd></div>
+          <div><dt>Potential Grant Amount</dt><dd><strong>${money(a.grant_amount_kobo)}</strong> (One-time)</dd></div>
+          <div><dt>Application Status</dt><dd>${badge(a.status)}</dd></div>
+          <div><dt>Processing Fee Status</dt><dd>${a.status === 'awaiting_payment' ? '<span class="badge awaiting_payment">Awaiting ₦1,000 Fee</span>' : '<span class="badge payment_confirmed">Verified ₦1,000</span>'}</dd></div>
+          <div><dt>Scheduled Disbursement</dt><dd>${a.disbursement_date ? dateFmt(a.disbursement_date) : 'December 2026'}</dd></div>
+          <div><dt>Documents Uploaded</dt><dd>${docs.length} document(s)</dd></div>
+        </div>
+
+        ${a.reason ? `<div class="notice warn"><strong>Review Feedback:</strong> ${escapeHTML(a.reason)}</div>` : ''}
+        ${a.status === 'awaiting_payment' ? `
+          <div class="notice">
+            Your documents are uploaded. Please complete the ₦1,000 registration fee to finalize submission.
+          </div>
+          <a class="btn" href="#apply">Proceed to Fee Payment →</a>
+        ` : a.status === 'draft' ? `
+          <a class="btn" href="#apply">Continue Application →</a>
+        ` : `
+          <div class="notice">
+            Your application is safely received. The review committee will assess your documents and eligibility.
+          </div>
+        `}
+
+        <hr class="divider">
+        <h3>Uploaded Documents</h3>
+        <div id="dash-docs">
+          ${docs.length ? docs.map(d => `
+            <div class="payment">
+              <div>
+                <strong>${escapeHTML(String(d.kind).replace(/_/g, ' '))}</strong>
+                <small>${Math.ceil(d.size_bytes / 1024)} KB · Uploaded ${dateFmt(d.uploaded_at.slice(0, 10))}</small>
+              </div>
+              <button class="btn secondary sm" data-dash-doc="${escapeHTML(d.id)}">Preview Image</button>
+            </div>
+          `).join('') : '<p class="muted compact">No documents attached yet.</p>'}
+        </div>
+      </section>
+    `;
+  } else {
+    appCard = `
+      <section class="card" style="margin-top:24px">
+        <span class="eyebrow">GRANT APPLICATION</span>
+        <h2>No Active Application</h2>
+        <p class="muted">You have not submitted a grant application yet. Complete your profile and apply for business support.</p>
+        <div class="actions">
+          <a class="btn" href="#apply">Start New Application →</a>
+        </div>
+      </section>
+    `;
+  }
+
+  main.innerHTML = heading('APPLICANT WORKSPACE', 'Welcome, ' + escapeHTML(currentUser.full_name), 'Manage your profile, grant application, and supporting documents.') + `
+    <div class="stats">
+      <div class="stat">
+        <small>Profile Status</small>
+        <strong>${hasProfile ? 'Complete' : 'Incomplete'}</strong>
+        <p>${hasProfile ? 'NIN and bank verified' : 'NIN & address required'}</p>
+      </div>
+      <div class="stat">
+        <small>Grant Tier</small>
+        <strong>${p.business_category === 'registered' ? '₦500,000' : '₦250,000'}</strong>
+        <p>${p.business_category === 'registered' ? 'Registered Enterprise' : 'Unregistered Business'}</p>
+      </div>
+      <div class="stat">
+        <small>Application Stage</small>
+        <strong>${hasApp ? escapeHTML(String(currentApp.status).replace(/_/g, ' ')) : 'Not Started'}</strong>
+        <p>${hasApp ? currentApp.reference_code || 'In progress' : 'Ready to apply'}</p>
+      </div>
+    </div>
+
+    ${!hasProfile ? `
+      <div class="notice warn">
+        <strong>Profile Action Required:</strong> Complete your personal details, National Identification Number (NIN), and bank information before applying.
+        <div style="margin-top:10px">
+          <a class="btn sm light" href="#apply">Complete Profile Now →</a>
+        </div>
+      </div>
+    ` : ''}
+
+    ${appCard}
+  `;
+
+  // Attach document preview handlers in dashboard
+  document.querySelectorAll('[data-dash-doc]').forEach(b => {
+    b.onclick = () => previewDocument(currentApp.id, b.dataset.dashDoc, false);
+  });
+}
+
+async function previewDocument(appId, docId, isAdmin) {
+  try {
+    const prefix = isAdmin ? '/admin' : '';
+    const token = isAdmin ? adminToken : '';
+    const res = await fetch(`/api/v1${prefix}/applications/${encodeURIComponent(appId)}/documents/${encodeURIComponent(docId)}`, {
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+      credentials: 'same-origin'
+    });
+    if (!res.ok) throw Error('Could not open document preview.');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    const dialog = document.createElement('dialog');
+    dialog.className = 'document-dialog';
+    dialog.innerHTML = `
+      <div class="heading">
+        <h3>Private Document Preview</h3>
+        <button class="btn secondary sm" type="button">Close</button>
+      </div>
+      <img src="${url}" alt="Supporting Document">
+    `;
+    document.body.append(dialog);
+    dialog.querySelector('button').onclick = () => dialog.close();
+    dialog.addEventListener('close', () => {
+      URL.revokeObjectURL(url);
+      dialog.remove();
+    }, { once: true });
+    dialog.showModal();
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+// ----------------- MULTI-STEP APPLY FLOW -----------------
+
+async function apply() {
+  if (!currentUser) {
+    location.hash = '#login';
+    return;
+  }
+
+  main.innerHTML = '<div class="empty">Loading application workflow…</div>';
+
+  try {
+    currentProfile = await api('/profile');
+    currentApp = await api('/applications/current').catch(() => null);
+  } catch (err) {
+    main.innerHTML = `<div class="error">${escapeHTML(err.message)}</div>`;
+    return;
+  }
+
+  // Determine current step
+  // Step 1: Profile & NIN
+  // Step 2: Business details & CAC
+  // Step 3: Document uploads
+  // Step 4: Fee payment
+  // Step 5: Submitted confirmation
+  if (currentApp && ['submitted', 'under_review', 'approved', 'rejected', 'disbursed'].includes(currentApp.status)) {
+    renderSubmittedView(currentApp);
+    return;
+  }
+
+  if (currentApp && currentApp.status === 'awaiting_payment') {
+    renderPaymentStep(currentApp);
+    return;
+  }
+
+  if (currentApp && currentApp.status === 'payment_confirmed') {
+    renderReviewSubmitStep(currentApp);
+    return;
+  }
+
+  renderApplicationForm();
+}
+
+function renderApplicationForm() {
+  const p = currentProfile || {};
+  const isRegistered = p.business_category === 'registered';
+
+  main.innerHTML = heading('GRANT APPLICATION', 'Apply for Solex Business Support', 'Complete the structured application form. All sections are verified by the backend.') + `
+    <div class="two-col">
+      <form id="apply-workflow-form" class="card">
+        <div class="steps-indicator">
+          <div class="step-dot active" title="Step 1: Personal & Bank"></div>
+          <div class="step-dot active" title="Step 2: Business & Category"></div>
+          <div class="step-dot active" title="Step 3: Document Uploads"></div>
+        </div>
+
+        <h2>1. Personal Identity & Bank Details</h2>
+        <p class="hint">National Identification Number (NIN) must be exactly 11 digits.</p>
+
+        <div class="form-grid">
+          <label class="field">Full Legal Name
+            <input name="full_name" required minlength="3" maxlength="150" value="${escapeHTML(p.full_name || currentUser.full_name)}">
+          </label>
+          <label class="field">Date of Birth (18+ only)
+            <input name="date_of_birth" type="date" required value="${escapeHTML(p.date_of_birth || '')}">
+          </label>
+          <label class="field">National Identification Number (NIN)
+            <input name="nin" required pattern="[0-9]{11}" maxlength="11" minlength="11" inputmode="numeric" placeholder="11 digits" value="${escapeHTML(p.nin || '')}">
+            <span class="hint">11-digit NIN string format validation.</span>
+          </label>
+          <label class="field">Phone Number
+            <input name="phone" type="tel" required value="${escapeHTML(p.phone || currentUser.phone)}">
+          </label>
+          <label class="field">Email Address
+            <input name="email" type="email" required value="${escapeHTML(p.email || currentUser.email)}">
+          </label>
+          <label class="field">State of Origin
+            <select name="state_of_origin" required>
+              <option value="">Select state of origin</option>
+              ${(programme?.states || []).map(s => `<option value="${escapeHTML(s)}" ${p.state_of_origin === s ? 'selected' : ''}>${escapeHTML(s)}</option>`).join('')}
+            </select>
+          </label>
+          <label class="field">LGA of Origin
+            <input name="lga" required minlength="2" maxlength="100" placeholder="e.g. Makurdi" value="${escapeHTML(p.lga || '')}">
+          </label>
+          <label class="field full">Full Residential Address
+            <textarea name="residential_address" required minlength="10" maxlength="500" placeholder="Street, landmark, town">${escapeHTML(p.residential_address || '')}</textarea>
+          </label>
+
+          <label class="field">Bank Name
+            <select name="bank_name" required>
+              <option value="">Select your bank</option>
+              ${(programme?.banks || []).map(b => `<option value="${escapeHTML(b)}" ${p.bank_name === b ? 'selected' : ''}>${escapeHTML(b)}</option>`).join('')}
+            </select>
+          </label>
+          <label class="field">Account Number (10 digits)
+            <input name="account_number" required pattern="[0-9]{10}" maxlength="10" minlength="10" inputmode="numeric" placeholder="10-digit NUBAN" value="${escapeHTML(p.account_number || '')}">
+          </label>
+          <label class="field full">Account-Holder Name
+            <input name="account_name" required minlength="3" maxlength="150" placeholder="Name as registered with your bank" value="${escapeHTML(p.account_name || '')}">
+          </label>
+        </div>
+
+        <div class="notice">
+          <strong>Bank ownership check:</strong> Enter an account in your name. We never ask for bank PINs, passwords, BVN, or OTPs.
+        </div>
+
+        <hr class="divider">
+        <h2>2. Business Information & Grant Category</h2>
+        <p class="hint">Select your category: Unregistered (₦250k) or Registered (₦500k).</p>
+
+        <div class="form-grid">
+          <label class="field full">Business Category
+            <select name="business_category" id="cat-selector" required>
+              <option value="unregistered" ${!isRegistered ? 'selected' : ''}>Category A — Unregistered Business (₦250,000 Grant)</option>
+              <option value="registered" ${isRegistered ? 'selected' : ''}>Category B — Registered Business with CAC (₦500,000 Grant)</option>
+            </select>
+          </label>
+
+          <div id="cac-fields" class="field full ${isRegistered ? '' : 'hidden'}">
+            <div class="form-grid" style="background:#f9faf6;padding:16px;border-radius:10px;border:1px solid var(--border)">
+              <label class="field">CAC Registration Number
+                <input name="cac_number" id="cac-num-input" placeholder="e.g. RC-123456 or BN-123456" value="${escapeHTML(p.cac_number || '')}">
+              </label>
+              <label class="field">Registered Business Name
+                <input name="registered_business_name" id="cac-name-input" placeholder="Name as recorded by CAC" value="${escapeHTML(p.registered_business_name || '')}">
+              </label>
+            </div>
+          </div>
+
+          <label class="field">Business / Trading Name
+            <input name="business_name" required minlength="2" maxlength="150" placeholder="Trading or shop name" value="${escapeHTML(p.business_name || '')}">
+          </label>
+          <label class="field">Business Type / Industry
+            <select name="business_type" required>
+              <option value="">Select industry</option>
+              ${['Market trading', 'Retail shop', 'POS business', 'Food & catering', 'Transport & logistics', 'Agriculture & agro-processing', 'Manufacturing & crafts', 'Technology & services', 'Other small enterprise'].map(t => `<option value="${t}" ${p.business_type === t ? 'selected' : ''}>${t}</option>`).join('')}
+            </select>
+          </label>
+
+          <label class="field">State of Operation
+            <select name="state_of_operation" required>
+              <option value="">Select operational state</option>
+              ${(programme?.states || []).map(s => `<option value="${escapeHTML(s)}" ${p.state_of_operation === s ? 'selected' : ''}>${escapeHTML(s)}</option>`).join('')}
+            </select>
+          </label>
+          <label class="field">LGA of Operation
+            <input name="lga_of_operation" required minlength="2" maxlength="100" placeholder="e.g. Ikeja" value="${escapeHTML(p.lga_of_operation || '')}">
+          </label>
+
+          <label class="field full">Operating Location / Business Address
+            <textarea name="business_address" required minlength="5" maxlength="500" placeholder="Shop, market stall, or usual operating location">${escapeHTML(p.business_address || '')}</textarea>
+          </label>
+
+          <label class="field">Operating History
+            <select name="operating_history" required>
+              <option value="">Select operating duration</option>
+              ${['Less than 1 year', '1 - 2 years', '3 - 5 years', 'More than 5 years'].map(h => `<option value="${h}" ${p.operating_history === h ? 'selected' : ''}>${h}</option>`).join('')}
+            </select>
+          </label>
+
+          <label class="field full">Purpose of the Grant
+            <textarea name="grant_purpose" required minlength="5" maxlength="1000" placeholder="How will this grant support your business growth?">${escapeHTML(p.grant_purpose || '')}</textarea>
+          </label>
+
+          <label class="field full">Intended Use of Funds
+            <textarea name="intended_use" required minlength="5" maxlength="1000" placeholder="Break down how the funds will be deployed (e.g. inventory restock, equipment purchase).">${escapeHTML(p.intended_use || '')}</textarea>
+          </label>
+        </div>
+
+        <hr class="divider">
+        <h2>3. Document Uploads</h2>
+        <p class="hint">Clear JPEG or PNG images only. Maximum 5 MB per file.</p>
+
+        <div class="form-grid">
+          <label class="field full">Passport Photograph (Portrait Photo)
+            <input type="file" name="passport_file" accept="image/jpeg,image/png" ${currentApp?.documents?.some(d => d.kind === 'passport_photo') ? '' : 'required'}>
+            <span class="hint">A clear frontal portrait photo of yourself, not a passport booklet.</span>
+          </label>
+
+          <label class="field">Supporting Document Type
+            <select name="support_kind" id="support-kind">
+              <option value="government_id">Government-issued ID (NIN Slip, Voter Card, Driver License)</option>
+              <option value="proof_of_address">Proof of Address / Utility Bill</option>
+            </select>
+          </label>
+          <label class="field">Supporting Identity / Address Image
+            <input type="file" name="support_file" accept="image/jpeg,image/png" ${currentApp?.documents?.some(d => ['government_id', 'proof_of_address'].includes(d.kind)) ? '' : 'required'}>
+          </label>
+
+          <div id="cac-doc-row" class="field full ${isRegistered ? '' : 'hidden'}">
+            <label class="field full">CAC Registration Certificate (Category B Only)
+              <input type="file" name="cac_file" id="cac-file-input" accept="image/jpeg,image/png">
+              <span class="hint">Upload clear photo or scan of your CAC certificate of incorporation / registration.</span>
+            </label>
+          </div>
+        </div>
+
+        <label class="check" style="margin-top:20px">
+          <input type="checkbox" name="consent" required>
+          <span>I declare that all details and documents provided are genuine and agree to administrative review.</span>
+        </label>
+
+        <div data-error></div>
+        <button class="btn" style="width:100%;margin-top:10px" type="submit">Save & Proceed to Review →</button>
+      </form>
+
+      <aside class="card">
+        <span class="eyebrow">APPLICATION SUMMARY</span>
+        <h2 id="aside-cat-title">${isRegistered ? '₦500,000' : '₦250,000'}</h2>
+        <p class="muted" id="aside-cat-sub">${isRegistered ? 'Registered Business Support' : 'Unregistered Business Support'}</p>
+        <hr class="divider">
+        <p class="compact">
+          ✓ Personal identity & 11-digit NIN<br>
+          ✓ Supported commercial bank<br>
+          ✓ Portrait photograph<br>
+          ✓ Identity card or utility bill<br>
+          <span id="aside-cac-req" class="${isRegistered ? '' : 'hidden'}">✓ CAC Certificate (Tier B)</span>
+        </p>
+        <div class="notice">
+          <strong>Registration Fee:</strong> ₦1,000 per application. Covers administrative processing and verification.
+        </div>
+      </aside>
+    </div>
+  `;
+
+  const catSelector = document.querySelector('#cat-selector');
+  const cacFields = document.querySelector('#cac-fields');
+  const cacDocRow = document.querySelector('#cac-doc-row');
+  const cacNumInput = document.querySelector('#cac-num-input');
+  const cacNameInput = document.querySelector('#cac-name-input');
+  const cacFileInput = document.querySelector('#cac-file-input');
+  const asideCatTitle = document.querySelector('#aside-cat-title');
+  const asideCatSub = document.querySelector('#aside-cat-sub');
+  const asideCacReq = document.querySelector('#aside-cac-req');
+
+  catSelector.onchange = () => {
+    const isReg = catSelector.value === 'registered';
+    cacFields.classList.toggle('hidden', !isReg);
+    cacDocRow.classList.toggle('hidden', !isReg);
+    asideCacReq.classList.toggle('hidden', !isReg);
+    asideCatTitle.textContent = isReg ? '₦500,000' : '₦250,000';
+    asideCatSub.textContent = isReg ? 'Registered Business Support' : 'Unregistered Business Support';
+    if (isReg) {
+      cacNumInput.setAttribute('required', 'true');
+      cacNameInput.setAttribute('required', 'true');
+    } else {
+      cacNumInput.removeAttribute('required');
+      cacNameInput.removeAttribute('required');
+      cacFileInput.removeAttribute('required');
+    }
+  };
+
+  const form = document.querySelector('#apply-workflow-form');
+  form.onsubmit = e => {
+    e.preventDefault();
+    action(form, async () => {
+      const fd = new FormData(form);
+      const isReg = fd.get('business_category') === 'registered';
+
+      const prof = {
+        full_name: fd.get('full_name').trim(),
+        date_of_birth: fd.get('date_of_birth'),
+        nin: fd.get('nin').trim(),
+        phone: fd.get('phone').trim(),
+        email: fd.get('email').trim(),
+        state_of_origin: fd.get('state_of_origin'),
+        lga: fd.get('lga').trim(),
+        residential_address: fd.get('residential_address').trim(),
+        business_category: fd.get('business_category'),
+        business_name: fd.get('business_name').trim(),
+        business_type: fd.get('business_type'),
+        business_description: fd.get('business_description').trim(),
+        business_address: fd.get('business_address').trim(),
+        state_of_operation: fd.get('state_of_operation'),
+        lga_of_operation: fd.get('lga_of_operation').trim(),
+        operating_history: fd.get('operating_history'),
+        grant_purpose: fd.get('grant_purpose').trim(),
+        intended_use: fd.get('intended_use').trim(),
+        bank_name: fd.get('bank_name'),
+        account_number: fd.get('account_number').trim(),
+        account_name: fd.get('account_name').trim()
+      };
+
+      if (isReg) {
+        prof.cac_number = (fd.get('cac_number') || '').trim();
+        prof.registered_business_name = (fd.get('registered_business_name') || '').trim();
+        if (!prof.cac_number || !prof.registered_business_name) {
+          throw Error('CAC registration number and registered business name are required for registered businesses.');
+        }
+      }
+
+      // 1. Save profile
+      await api('/profile', { method: 'PUT', body: prof });
+
+      // 2. Start application if not already started
+      let app = currentApp;
+      if (!app || app.status === 'draft') {
+        app = await api('/applications/start', { method: 'POST', body: { category: prof.business_category } });
+        currentApp = app;
+      }
+
+      // 3. Upload documents
+      const passportFile = fd.get('passport_file');
+      if (passportFile && passportFile.size > 0) {
+        await uploadFile(app.id, 'passport_photo', passportFile);
+      }
+      const supportFile = fd.get('support_file');
+      if (supportFile && supportFile.size > 0) {
+        await uploadFile(app.id, fd.get('support_kind'), supportFile);
+      }
+      if (isReg) {
+        const cacFile = fd.get('cac_file');
+        if (cacFile && cacFile.size > 0) {
+          await uploadFile(app.id, 'cac_certificate', cacFile);
+        }
+      }
+
+      // 4. Transition to ready for payment
+      app = await api('/applications/ready-for-payment', { method: 'POST', body: { application_id: app.id } });
+      currentApp = app;
+
+      toast('Application saved! Proceeding to the registration fee stage.');
+      apply();
+    });
+  };
+}
+
+async function uploadFile(appId, kind, file) {
+  if (file.size > 5 * 1024 * 1024) {
+    throw Error(`File for ${kind} exceeds the 5 MB limit.`);
+  }
+  const data = new FormData();
+  data.set('kind', kind);
+  data.set('file', file);
+
+  const res = await fetch(`/api/v1/applications/${encodeURIComponent(appId)}/documents`, {
+    method: 'POST',
+    body: data,
+    credentials: 'same-origin'
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw Error(json.error || `Upload failed for ${kind}`);
+  return json;
+}
+
+async function renderPaymentStep(app) {
+  main.innerHTML = '<div class="empty">Preparing payment details…</div>';
+  const disclosure = await api('/fee-disclosure');
+  const payInit = await api('/payments/init', { method: 'POST', body: { application_id: app.id } });
+  const payment = payInit.payment;
+
+  main.innerHTML = heading('APPLICATION FEE', '₦1,000 Administrative Processing Fee', 'Review the required statutory disclosures before processing the verification fee.') + `
+    <div class="two-col">
+      <section class="card">
+        <div class="steps-indicator">
+          <div class="step-dot done"></div>
+          <div class="step-dot done"></div>
+          <div class="step-dot active"></div>
+        </div>
+
+        <h2>Administrative Fee Disclosure</h2>
+        <div class="notice">
+          <strong>Mandatory Disclosure:</strong> ${escapeHTML(disclosure.purpose)}
+        </div>
+
+        <div class="detail-list">
+          <div><dt>Programme Operator</dt><dd>${escapeHTML(disclosure.operator_identity)}</dd></div>
+          <div><dt>Processing Fee</dt><dd><strong>${money(disclosure.fee_amount_kobo)}</strong></dd></div>
+          <div><dt>Refund Policy</dt><dd>${escapeHTML(disclosure.refund_policy)}</dd></div>
+          <div><dt>Payment Reference</dt><dd><code class="key" style="margin:0">${escapeHTML(payment.reference)}</code></dd></div>
+          <div><dt>Support Contact</dt><dd>${escapeHTML(disclosure.contact_information)}</dd></div>
+          <div><dt>Approval Guarantee</dt><dd>${escapeHTML(disclosure.no_guarantee_notice)}</dd></div>
+        </div>
+
+        <p class="hint">${escapeHTML(disclosure.policy_status)}</p>
+
+        <hr class="divider">
+        <h3>Payment Processing</h3>
+        <p class="hint">In this development prototype, payment verification is conducted using the secure local sandbox payment simulator below.</p>
+
+        <div style="background:#f4f6ee;border:1px dashed var(--green);border-radius:10px;padding:20px;margin:20px 0">
+          <span class="pill" style="margin-bottom:10px"><i></i> LOCAL SANDBOX SIMULATOR</span>
+          <p><strong>Simulator Amount:</strong> ₦1,000 (100,000 kobo)</p>
+          <p class="compact muted">Simulate payment verification against the backend payment ledger.</p>
+          <div class="actions">
+            <button id="sim-success-btn" class="btn">Simulate Successful Payment (₦1,000)</button>
+            <button id="sim-fail-btn" class="btn secondary">Simulate Payment Failure</button>
+          </div>
+          <div id="sim-status" style="margin-top:14px"></div>
+        </div>
+      </section>
+
+      <aside class="card">
+        <span class="eyebrow">YOUR APPLICATION</span>
+        <h2>${app.category === 'registered' ? '₦500,000' : '₦250,000'}</h2>
+        <p class="muted">${app.category === 'registered' ? 'Registered Enterprise' : 'Unregistered Business'}</p>
+        <hr class="divider">
+        <p class="compact">
+          Ref: <strong>${escapeHTML(app.reference_code || app.id)}</strong><br>
+          Applicant: ${escapeHTML(currentUser.full_name)}<br>
+          Commencement: 10 December 2026<br>
+          Status: <strong>Awaiting payment</strong>
+        </p>
+        <div class="notice">
+          We never accept direct transfers to personal accounts or unverified screenshot receipts.
+        </div>
+      </aside>
+    </div>
+  `;
+
+  document.querySelector('#sim-success-btn').onclick = async () => {
+    const statusBox = document.querySelector('#sim-status');
+    statusBox.innerHTML = '<span class="hint">Verifying payment with backend…</span>';
+    try {
+      const res = await api('/payments/verify', {
+        method: 'POST',
+        body: {
+          reference: payment.reference,
+          simulator_action: 'simulate_success'
+        }
+      });
+      currentApp = res.application;
+      toast('Payment verified successfully!');
+      renderReviewSubmitStep(currentApp);
+    } catch (err) {
+      statusBox.innerHTML = `<div class="error">${escapeHTML(err.message)}</div>`;
+    }
+  };
+
+  document.querySelector('#sim-fail-btn').onclick = async () => {
+    const statusBox = document.querySelector('#sim-status');
+    try {
+      await api('/payments/verify', {
+        method: 'POST',
+        body: {
+          reference: payment.reference,
+          simulator_action: 'simulate_failure'
+        }
+      });
+      statusBox.innerHTML = '<div class="error">Simulated payment failed. Application remains unpaid.</div>';
+    } catch (err) {
+      statusBox.innerHTML = `<div class="error">${escapeHTML(err.message)}</div>`;
+    }
+  };
+}
+
+function renderReviewSubmitStep(app) {
+  main.innerHTML = heading('FINAL REVIEW', 'Confirm & Submit Application', 'Your ₦1,000 processing fee is verified. Review your application details before submission.') + `
+    <div class="two-col">
+      <section class="card">
+        <div class="steps-indicator">
+          <div class="step-dot done"></div>
+          <div class="step-dot done"></div>
+          <div class="step-dot done"></div>
+        </div>
+
+        <div class="notice">
+          <strong>Payment Verified:</strong> Your ₦1,000 application fee has been confirmed. You are now ready to submit.
+        </div>
+
+        <h2>Application Summary</h2>
+        <div class="detail-list">
+          <div><dt>Applicant Name</dt><dd>${escapeHTML(app.profile?.full_name || currentUser.full_name)}</dd></div>
+          <div><dt>NIN</dt><dd>${escapeHTML(app.profile?.nin || 'Provided')}</dd></div>
+          <div><dt>Business Category</dt><dd>${app.category === 'registered' ? 'Registered Business' : 'Unregistered Business'}</dd></div>
+          <div><dt>Potential Grant Amount</dt><dd><strong>${money(app.grant_amount_kobo)}</strong> (One-time)</dd></div>
+          <div><dt>Bank Name</dt><dd>${escapeHTML(app.profile?.bank_name)}</dd></div>
+          <div><dt>Account Number</dt><dd>${escapeHTML(app.profile?.account_number)}</dd></div>
+          <div><dt>Account Name</dt><dd>${escapeHTML(app.profile?.account_name)}</dd></div>
+          <div><dt>Commencement Date</dt><dd>10 December 2026</dd></div>
+        </div>
+
+        <form id="final-submit-form" style="margin-top:20px">
+          <label class="check">
+            <input type="checkbox" name="confirm_submit" required>
+            <span>I confirm this submission and understand that applications are subject to manual administrative review and eligibility checks.</span>
+          </label>
+          <div data-error></div>
+          <button class="btn" style="width:100%;margin-top:12px" type="submit">Submit Application for Consideration →</button>
+        </form>
+      </section>
+
+      <aside class="card">
+        <span class="eyebrow">SUBMISSION CHECKLIST</span>
+        <h2>${money(app.grant_amount_kobo)}</h2>
+        <p class="muted">One-time allocation</p>
+        <hr class="divider">
+        <p class="compact">
+          ✓ Profile & NIN complete<br>
+          ✓ Supported bank details saved<br>
+          ✓ Passport & ID images uploaded<br>
+          ✓ ₦1,000 fee verified<br>
+          ✓ Confirmation email queued
+        </p>
+      </aside>
+    </div>
+  `;
+
+  const form = document.querySelector('#final-submit-form');
+  form.onsubmit = e => {
+    e.preventDefault();
+    action(form, async () => {
+      const res = await api('/applications/submit', {
+        method: 'POST',
+        body: { application_id: app.id }
+      });
+      currentApp = res.application;
+      toast('Application submitted successfully!');
+      renderSubmittedView(currentApp);
+    });
+  };
+}
+
+function renderSubmittedView(app) {
+  main.innerHTML = heading('APPLICATION SUBMITTED', 'Your Application is Under Consideration', 'Your submission has been securely recorded and queued for committee review.') + `
+    <div class="card" style="max-width:800px;margin:20px auto">
+      <div style="text-align:center;padding:20px 0">
+        <div style="width:64px;height:64px;border-radius:50%;background:#eaf0e4;color:var(--green);display:grid;place-items:center;font-size:32px;margin:0 auto 16px">✓</div>
+        <h2>Application Received</h2>
+        <p class="muted">Application Reference Code</p>
+        <code class="key" style="font-size:18px;font-weight:700;display:inline-block">${escapeHTML(app.reference_code || app.id)}</code>
+      </div>
+
+      <div class="detail-list">
+        <div><dt>Applicant</dt><dd>${escapeHTML(app.profile?.full_name || currentUser?.full_name)}</dd></div>
+        <div><dt>Business Category</dt><dd>${app.category === 'registered' ? 'Registered Business' : 'Unregistered Business'}</dd></div>
+        <div><dt>Potential Grant Amount</dt><dd><strong>${money(app.grant_amount_kobo)}</strong></dd></div>
+        <div><dt>Application Status</dt><dd>${badge(app.status)}</dd></div>
+      </div>
+
+      <div class="notice">
+        <strong>Confirmation Email Sent:</strong> A confirmation email with your reference code and category details has been dispatched to <strong>${escapeHTML(app.profile?.email || currentUser?.email)}</strong>.
+      </div>
+
+      <p class="compact muted" style="margin-top:20px">
+        Please note: Successful submission does not mean your application has been approved. All applications are subject to document verification, Nigerian bank check, and eligibility review.
+      </p>
+
+      <div class="actions" style="justify-content:center;margin-top:26px">
+        <a class="btn" href="#dashboard">Go to Applicant Dashboard</a>
+        <a class="btn secondary" href="#home">Back to Homepage</a>
+      </div>
+    </div>
+  `;
+}
+
+// ----------------- ADMIN DASHBOARD -----------------
+
+function admin() {
+  if (!adminToken) {
+    main.innerHTML = heading('PROGRAMME OPERATIONS', 'Administrator Workspace', 'Authorised access to application review, checklist verification, and disbursement.') + `
+      <form id="admin-login-form" class="card login">
+        <span class="eyebrow">RESTRICTED ACCESS</span>
+        <h2 style="margin-top:10px">Sign in as Administrator</h2>
+        <p class="muted compact">Enter the configured ADMIN_TOKEN.</p>
+        <label class="field">Admin Security Token
+          <input name="token" type="password" required autocomplete="off" placeholder="At least 32 characters">
+        </label>
+        <div data-error></div>
+        <button class="btn" style="width:100%;margin-top:14px" type="submit">Access Workspace →</button>
+      </form>
+    `;
+    const form = document.querySelector('#admin-login-form');
+    form.onsubmit = e => {
+      e.preventDefault();
+      action(form, async () => {
+        const token = new FormData(form).get('token').trim();
+        const metrics = await api('/admin/metrics', { token });
+        adminToken = token;
+        sessionStorage.setItem('solex_admin_token', token);
+        adminDashboard(metrics);
+      });
+    };
+    return;
+  }
+
+  loadAdmin();
+}
+
+async function loadAdmin() {
+  try {
+    const metrics = await api('/admin/metrics', { token: adminToken });
+    adminDashboard(metrics);
+  } catch (err) {
+    adminToken = '';
+    sessionStorage.removeItem('solex_admin_token');
+    admin();
+  }
+}
+
+async function adminDashboard(metrics) {
+  main.innerHTML = '<div class="empty">Loading administrator workspace…</div>';
+
+  let list = [];
+  try {
+    list = await api('/admin/applications', { token: adminToken });
+    applications = list;
+  } catch (err) {
+    main.innerHTML = `<div class="error">${escapeHTML(err.message)}</div>`;
+    return;
+  }
+
+  main.innerHTML = heading('PROGRAMME OPERATIONS', 'Administrator Workspace', 'Review submissions, verify CAC records, record decisions, and export data.') + `
+    <div class="actions" style="margin:0 0 20px">
+      <button id="admin-refresh" class="btn secondary sm">↻ Refresh Data</button>
+      <button id="admin-export-csv" class="btn secondary sm">⤓ Export CSV (Privacy Safe)</button>
+      <button id="admin-view-emails" class="btn secondary sm">✉ View Email Outbox</button>
+      <button id="admin-view-audit" class="btn secondary sm">📋 View Audit Log</button>
+      <button id="admin-logout" class="btn danger sm">Sign Out Admin</button>
+    </div>
+
+    <div class="stats admin-grid">
+      <div class="stat"><small>Registered Users</small><strong>${metrics.total_users}</strong><p>Applicant accounts</p></div>
+      <div class="stat"><small>Total Applications</small><strong>${metrics.total_applications}</strong><p>All recorded applications</p></div>
+      <div class="stat"><small>Tier A (Unregistered)</small><strong>${metrics.unregistered_business_apps}</strong><p>₦250,000 grant category</p></div>
+      <div class="stat"><small>Tier B (Registered)</small><strong>${metrics.registered_business_apps}</strong><p>₦500,000 CAC category</p></div>
+      <div class="stat"><small>Awaiting Payment</small><strong>${metrics.applications_awaiting_payment}</strong><p>Pending ₦1,000 fee</p></div>
+      <div class="stat"><small>Submitted / Review</small><strong>${metrics.submitted_applications + metrics.applications_under_review}</strong><p>Queued for assessment</p></div>
+      <div class="stat"><small>Approved Applications</small><strong>${metrics.approved_applications}</strong><p>Funding commitments</p></div>
+      <div class="stat"><small>Disbursed</small><strong>${metrics.disbursed_applications}</strong><p>Paid beneficiaries</p></div>
+      <div class="stat"><small>Fees Collected</small><strong>${money(metrics.verified_fees_collected_kobo)}</strong><p>Verified ₦1,000 fees</p></div>
+      <div class="stat"><small>Grant Commitments</small><strong>${money(metrics.approved_grant_commitments_kobo)}</strong><p>Approved funding total</p></div>
+      <div class="stat"><small>Disbursements Paid</small><strong>${money(metrics.recorded_disbursements_kobo)}</strong><p>Disbursed capital</p></div>
+      <div class="stat"><small>Rejected Applications</small><strong>${metrics.rejected_applications}</strong><p>Decisions with reasons</p></div>
+    </div>
+
+    <section class="card">
+      <div class="section-head" style="margin-top:0">
+        <h2>Applications Directory</h2>
+        <span class="hint">${applications.length} applications loaded</span>
+      </div>
+
+      <div class="toolbar">
+        <input id="admin-search" aria-label="Search applicants" placeholder="Search by applicant name, business, state, reference code…">
+        <select id="admin-filter-status" aria-label="Filter status">
+          <option value="">All Statuses</option>
+          <option value="draft">Draft</option>
+          <option value="awaiting_payment">Awaiting Payment</option>
+          <option value="submitted">Submitted</option>
+          <option value="under_review">Under Review</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="disbursed">Disbursed</option>
+        </select>
+        <select id="admin-filter-cat" aria-label="Filter category">
+          <option value="">All Categories</option>
+          <option value="unregistered">Unregistered (₦250k)</option>
+          <option value="registered">Registered (₦500k)</option>
+        </select>
+      </div>
+
+      <div id="admin-table-container"></div>
+    </section>
+
+    <div id="admin-review-drawer"></div>
+    <div id="admin-modal-host"></div>
+  `;
+
+  document.querySelector('#admin-refresh').onclick = loadAdmin;
+  document.querySelector('#admin-logout').onclick = () => {
+    adminToken = '';
+    sessionStorage.removeItem('solex_admin_token');
+    admin();
+  };
+  document.querySelector('#admin-export-csv').onclick = () => {
+    window.location.href = `/api/v1/admin/export?format=csv&token=${encodeURIComponent(adminToken)}`;
+  };
+  document.querySelector('#admin-view-emails').onclick = showAdminEmails;
+  document.querySelector('#admin-view-audit').onclick = showAdminAudit;
+
+  const searchInput = document.querySelector('#admin-search');
+  const statusFilter = document.querySelector('#admin-filter-status');
+  const catFilter = document.querySelector('#admin-filter-cat');
+
+  searchInput.oninput = renderAdminRows;
+  statusFilter.onchange = renderAdminRows;
+  catFilter.onchange = renderAdminRows;
+
+  renderAdminRows();
+  if (selectedAppID) reviewApp(selectedAppID);
+}
+
+function renderAdminRows() {
+  const q = (document.querySelector('#admin-search')?.value || '').toLowerCase();
+  const status = document.querySelector('#admin-filter-status')?.value || '';
+  const cat = document.querySelector('#admin-filter-cat')?.value || '';
+
+  const rows = applications.filter(a => {
+    if (status && a.status !== status) return false;
+    if (cat && a.category !== cat) return false;
+    if (q) {
+      const hay = [
+        a.profile?.full_name, a.full_name,
+        a.profile?.business_name, a.business_name,
+        a.profile?.state_of_operation, a.state,
+        a.reference_code, a.id
+      ].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const container = document.querySelector('#admin-table-container');
+  if (!container) return;
+
+  container.innerHTML = rows.length ? `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>APPLICANT / BUSINESS</th>
+            <th>TIER & AMOUNT</th>
+            <th>LOCATION</th>
+            <th>STATUS</th>
+            <th>ACTION</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(a => `
+            <tr>
+              <td>
+                <strong>${escapeHTML(a.profile?.full_name || a.full_name || 'Applicant')}</strong>
+                <small>${escapeHTML(a.profile?.business_name || a.business_name || 'Business')}</small>
+              </td>
+              <td>
+                ${escapeHTML(a.category === 'registered' ? 'Tier B (Registered)' : 'Tier A (Unregistered)')}
+                <small><strong>${money(a.grant_amount_kobo)}</strong></small>
+              </td>
+              <td>
+                ${escapeHTML(a.profile?.state_of_operation || a.state || 'N/A')}
+                <small>${escapeHTML(a.profile?.lga_of_operation || a.lga || '')}</small>
+              </td>
+              <td>${badge(a.status)}</td>
+              <td>
+                <button class="btn secondary sm" data-review-id="${escapeHTML(a.id)}">Review Record →</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  ` : '<div class="empty">No applications match the current filter.</div>';
+
+  container.querySelectorAll('[data-review-id]').forEach(b => {
+    b.onclick = () => {
+      reviewApp(b.dataset.reviewId);
+      document.querySelector('#admin-review-drawer')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+  });
+}
+
+function reviewApp(id) {
+  selectedAppID = id;
+  const a = applications.find(x => x.id === id);
+  const host = document.querySelector('#admin-review-drawer');
+  if (!a || !host) return;
+
+  const p = a.profile || {};
+  const isReg = a.category === 'registered';
+  const checks = a.checks || {};
+  const docs = a.documents || [];
+
+  host.innerHTML = `
+    <section class="card" style="margin-top:24px">
+      <div class="heading">
+        <div>
+          <span class="eyebrow">APPLICATION ASSESSMENT</span>
+          <h2>${escapeHTML(p.full_name || a.full_name)}</h2>
+          <p class="muted">Ref: <strong>${escapeHTML(a.reference_code || a.id)}</strong> · Category: <strong>${escapeHTML(a.category)}</strong> (${money(a.grant_amount_kobo)})</p>
+        </div>
+        ${badge(a.status)}
+      </div>
+
+      <div class="two-col">
+        <div>
+          <h3>Applicant & Business Dossier</h3>
+          <div class="detail-list">
+            <div><dt>Legal Name</dt><dd>${escapeHTML(p.full_name || a.full_name)}</dd></div>
+            <div><dt>Date of Birth</dt><dd>${escapeHTML(p.date_of_birth || a.date_of_birth)}</dd></div>
+            <div><dt>NIN (Identity Number)</dt><dd><code>${escapeHTML(p.nin || 'Not provided')}</code></dd></div>
+            <div><dt>Phone & Email</dt><dd>${escapeHTML(p.phone || a.phone)}<br><small>${escapeHTML(p.email)}</small></dd></div>
+            <div><dt>Residential Address</dt><dd>${escapeHTML(p.residential_address || a.residential_address)}</dd></div>
+            <div><dt>Location</dt><dd>${escapeHTML(p.state_of_operation || a.state)}, ${escapeHTML(p.lga_of_operation || a.lga)}</dd></div>
+            <div><dt>Business Name</dt><dd>${escapeHTML(p.business_name || a.business_name)}</dd></div>
+            <div><dt>Business Type</dt><dd>${escapeHTML(p.business_type || a.business_type)}</dd></div>
+            <div><dt>Business Address</dt><dd>${escapeHTML(p.business_address || a.business_address)}</dd></div>
+            <div><dt>Operating History</dt><dd>${escapeHTML(p.operating_history || 'Not stated')}</dd></div>
+            ${isReg ? `
+              <div><dt>CAC Registration No.</dt><dd><strong>${escapeHTML(p.cac_number || 'Missing')}</strong></dd></div>
+              <div><dt>Registered Name (CAC)</dt><dd>${escapeHTML(p.registered_business_name || 'Missing')}</dd></div>
+            ` : ''}
+            <div><dt>Bank Details</dt><dd>${escapeHTML(p.bank_name || a.bank_name)}<br>Acc: ${escapeHTML(p.account_number || a.account_number)} (${escapeHTML(p.account_name || a.account_name)})</dd></div>
+          </div>
+
+          <p class="compact"><strong>Purpose of Grant:</strong> ${escapeHTML(p.grant_purpose || a.business_description)}</p>
+          <p class="compact"><strong>Intended Use of Funds:</strong> ${escapeHTML(p.intended_use || 'Not specified')}</p>
+
+          <hr class="divider">
+          <h3>Supporting Documents (${docs.length})</h3>
+          <div>
+            ${docs.length ? docs.map(d => `
+              <div class="payment">
+                <div>
+                  <strong>${escapeHTML(String(d.kind).replace(/_/g, ' '))}</strong>
+                  <small>${Math.ceil(d.size_bytes / 1024)} KB · Uploaded ${dateFmt(d.uploaded_at.slice(0, 10))}</small>
+                </div>
+                <button type="button" class="btn secondary sm" data-admin-doc="${escapeHTML(d.id)}">Preview Document</button>
+              </div>
+            `).join('') : '<p class="muted compact">No documents uploaded.</p>'}
+          </div>
+        </div>
+
+        <div>
+          <h3>Verification Checklist</h3>
+          <p class="hint">Verify uploaded evidence before ticking checkboxes.</p>
+          <form id="admin-checks-form">
+            <label class="check"><input type="checkbox" name="phone" ${checks.phone ? 'checked' : ''}><span>Phone number format verified</span></label>
+            <label class="check"><input type="checkbox" name="identity_and_age" ${checks.identity_and_age ? 'checked' : ''}><span>NIN & Age 18+ verified</span></label>
+            <label class="check"><input type="checkbox" name="address" ${checks.address ? 'checked' : ''}><span>Residential / utility address verified</span></label>
+            <label class="check"><input type="checkbox" name="business" ${checks.business ? 'checked' : ''}><span>Business operations established</span></label>
+            <label class="check"><input type="checkbox" name="bank_account_ownership" ${checks.bank_account_ownership ? 'checked' : ''}><span>Nigerian bank account valid</span></label>
+            ${isReg ? `
+              <label class="check"><input type="checkbox" name="cac_registration" ${checks.cac_registration ? 'checked' : ''}><span>CAC certificate & number authenticated</span></label>
+            ` : ''}
+            <div data-error></div>
+            <button class="btn secondary" style="width:100%;margin-top:10px">Save Verification Checklist</button>
+          </form>
+
+          <hr class="divider">
+          <h3>Administrative Decision</h3>
+
+          ${a.status !== 'approved' && a.status !== 'disbursed' ? `
+            <form id="admin-approve-form" style="margin-bottom:20px">
+              <label class="field">Scheduled One-Time Disbursement Date
+                <input name="disbursement_date" type="date" required value="${a.disbursement_date || '2026-12-10'}">
+              </label>
+              <div data-error></div>
+              <button class="btn" style="width:100%;margin-top:10px">Approve for ${money(a.grant_amount_kobo)}</button>
+            </form>
+
+            <form id="admin-reject-form">
+              <label class="field">Reason for Rejection
+                <textarea name="reason" required minlength="5" maxlength="500" placeholder="State clear administrative reason for rejection..."></textarea>
+              </label>
+              <div data-error></div>
+              <button class="btn danger" style="width:100%;margin-top:10px">Reject Application</button>
+            </form>
+          ` : a.status === 'approved' ? `
+            <div class="notice">
+              Application approved for <strong>${money(a.grant_amount_kobo)}</strong> scheduled for <strong>${dateFmt(a.disbursement_date)}</strong>.
+            </div>
+            <button id="admin-disburse-btn" class="btn" style="width:100%">Record Grant Disbursement →</button>
+          ` : `
+            <div class="notice" style="background:#e1f0e1;border-color:#2d633a">
+              <strong>Grant Disbursed:</strong> One-time grant payment of ${money(a.grant_amount_kobo)} has been recorded.
+            </div>
+          `}
+        </div>
+      </div>
+    </section>
+  `;
+
+  // Document preview button binding
+  host.querySelectorAll('[data-admin-doc]').forEach(b => {
+    b.onclick = () => previewDocument(a.id, b.dataset.adminDoc, true);
+  });
+
+  // Checks form handler
+  const checksForm = host.querySelector('#admin-checks-form');
+  if (checksForm) {
+    checksForm.onsubmit = e => {
+      e.preventDefault();
+      action(checksForm, async () => {
+        const fd = new FormData(checksForm);
+        const newChecks = {
+          phone: fd.has('phone'),
+          identity_and_age: fd.has('identity_and_age'),
+          address: fd.has('address'),
+          business: fd.has('business'),
+          bank_account_ownership: fd.has('bank_account_ownership'),
+          cac_registration: isReg ? fd.has('cac_registration') : false
+        };
+        await api(`/admin/applications/${encodeURIComponent(a.id)}/checks`, {
+          method: 'PUT',
+          token: adminToken,
+          body: newChecks
+        });
+        toast('Checklist updated.');
+        await loadAdmin();
+      });
+    };
+  }
+
+  // Approve form handler
+  const approveForm = host.querySelector('#admin-approve-form');
+  if (approveForm) {
+    approveForm.onsubmit = e => {
+      e.preventDefault();
+      action(approveForm, async () => {
+        const dateVal = new FormData(approveForm).get('disbursement_date');
+        await api(`/admin/applications/${encodeURIComponent(a.id)}/approve`, {
+          method: 'POST',
+          token: adminToken,
+          body: { disbursement_date: dateVal }
+        });
+        toast('Application approved.');
+        await loadAdmin();
+      });
+    };
+  }
+
+  // Reject form handler
+  const rejectForm = host.querySelector('#admin-reject-form');
+  if (rejectForm) {
+    rejectForm.onsubmit = e => {
+      e.preventDefault();
+      action(rejectForm, async () => {
+        const reason = new FormData(rejectForm).get('reason').trim();
+        await api(`/admin/applications/${encodeURIComponent(a.id)}/reject`, {
+          method: 'POST',
+          token: adminToken,
+          body: { reason }
+        });
+        toast('Application rejected with reason.');
+        await loadAdmin();
+      });
+    };
+  }
+
+  // Disburse button handler
+  const disburseBtn = host.querySelector('#admin-disburse-btn');
+  if (disburseBtn) {
+    disburseBtn.onclick = async () => {
+      if (!confirm(`Confirm disbursement of ${money(a.grant_amount_kobo)} to ${p.full_name}?`)) return;
+      try {
+        await api(`/admin/applications/${encodeURIComponent(a.id)}/disburse`, {
+          method: 'POST',
+          token: adminToken
+        });
+        toast('Disbursement recorded.');
+        await loadAdmin();
+      } catch (err) {
+        toast(err.message);
+      }
+    };
+  }
+}
+
+async function showAdminEmails() {
+  const host = document.querySelector('#admin-modal-host');
+  if (!host) return;
+  try {
+    const emails = await api('/admin/emails', { token: adminToken });
+    const dialog = document.createElement('dialog');
+    dialog.className = 'document-dialog';
+    dialog.innerHTML = `
+      <div class="heading">
+        <h3>Dispatched & Queued Emails (${emails.length})</h3>
+        <button class="btn secondary sm" type="button">Close</button>
+      </div>
+      <div style="max-height:60vh;overflow-y:auto">
+        ${emails.length ? emails.map(m => `
+          <div class="card" style="margin-bottom:12px;background:#fcfdfa">
+            <p><strong>To:</strong> ${escapeHTML(m.to)} · <strong>Status:</strong> ${escapeHTML(m.status)} · <small>${escapeHTML(m.created_at)}</small></p>
+            <p><strong>Subject:</strong> ${escapeHTML(m.subject)}</p>
+            <pre style="white-space:pre-wrap;background:#fff;padding:12px;border:1px solid var(--border);border-radius:6px;font-size:12px">${escapeHTML(m.body)}</pre>
+          </div>
+        `).join('') : '<p class="muted">No emails queued or sent yet.</p>'}
+      </div>
+    `;
+    document.body.append(dialog);
+    dialog.querySelector('button').onclick = () => dialog.close();
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    dialog.showModal();
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+async function showAdminAudit() {
+  const host = document.querySelector('#admin-modal-host');
+  if (!host) return;
+  try {
+    const logs = await api('/admin/audit', { token: adminToken });
+    const dialog = document.createElement('dialog');
+    dialog.className = 'document-dialog';
+    dialog.innerHTML = `
+      <div class="heading">
+        <h3>Administrative Audit Trail (${logs.length})</h3>
+        <button class="btn secondary sm" type="button">Close</button>
+      </div>
+      <div style="max-height:60vh;overflow-y:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>TIMESTAMP</th>
+              <th>ACTOR</th>
+              <th>ACTION</th>
+              <th>DETAILS</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${logs.slice().reverse().map(l => `
+              <tr>
+                <td><small>${escapeHTML(new Date(l.at).toLocaleString())}</small></td>
+                <td><code>${escapeHTML(l.actor)}</code></td>
+                <td><strong>${escapeHTML(l.action)}</strong></td>
+                <td><small>${escapeHTML(l.details || l.application_id || '')}</small></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+    document.body.append(dialog);
+    dialog.querySelector('button').onclick = () => dialog.close();
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    dialog.showModal();
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+// ----------------- ROUTING -----------------
+
+async function route() {
+  const epoch = ++viewEpoch;
+  const page = location.hash.slice(1) || 'home';
+
+  // Load programme metadata once
+  if (!programme) {
+    main.innerHTML = '<div class="empty">Loading Solex Programme details…</div>';
+    try {
+      programme = await api('/programme');
+      const sideCommence = document.querySelector('#side-commence-info');
+      if (sideCommence && programme.commencement_date) {
+        sideCommence.textContent = `Commences ${dateFmt(programme.commencement_date)}`;
+      }
+    } catch (e) {
+      main.innerHTML = `<div class="error">${escapeHTML(e.message)}</div><button class="btn" id="retry-btn">Retry</button>`;
+      document.querySelector('#retry-btn').onclick = route;
+      return;
+    }
+  }
+
+  // Check auth status if not known
+  if (currentUser === null) {
+    try {
+      const meData = await api('/auth/me');
+      if (meData && meData.user) {
+        currentUser = meData.user;
+      }
+    } catch (_) {}
+  }
+
+  if (epoch !== viewEpoch) return;
+
+  renderNav();
+
+  const pages = {
+    home,
+    about,
+    eligibility,
+    contact,
+    register,
+    login,
+    dashboard,
+    apply,
+    admin
+  };
+
+  const handler = pages[page] || home;
+  handler();
+}
+
+window.addEventListener('hashchange', route);
+route();
