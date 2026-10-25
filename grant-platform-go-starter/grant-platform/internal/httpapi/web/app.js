@@ -167,7 +167,7 @@ function home() {
         <div class="actions">
           ${isAuth
             ? `<a class="btn light" href="#dashboard">Go to Dashboard <span>↗</span></a><a class="btn secondary" href="#apply">Apply for Grant</a>`
-            : `<a class="btn light" href="#register">Create Account to Apply <span>↗</span></a><a class="btn secondary" href="#login">Sign In</a>`
+            : `<a class="btn light" href="#register">Create Account <span>↗</span></a><a class="btn secondary" href="#login">Login</a>`
           }
         </div>
       </div>
@@ -175,9 +175,9 @@ function home() {
         <div class="orb"></div>
         <div class="orb two"></div>
         <div class="grant-card">
-          <span class="eyebrow">TWO GRANT TIERS</span>
-          <div class="amount">₦500,000</div>
-          <span>Registered Business Grant</span>
+          <span class="eyebrow">PROGRAMME TIERS</span>
+          <div style="font:700 24px Georgia,serif;color:#244832;margin:18px 0 6px">Dual Grant Tiers</div>
+          <span>Registered & Unregistered Businesses</span>
           <span class="stamp">
             COMMENCING: 10 DEC 2026<br>
             Disbursement: Dec 2026<br>
@@ -197,7 +197,7 @@ function home() {
         <span class="cat-badge">CATEGORY A</span>
         <div>
           <span class="eyebrow">UNREGISTERED BUSINESSES</span>
-          <div class="amount">₦250,000</div>
+          <h3 style="font-size:22px;margin:10px 0 6px">Unregistered Business Support</h3>
           <p class="muted">One-time business support grant</p>
           <hr class="divider">
           <p class="compact">
@@ -208,7 +208,10 @@ function home() {
           </p>
         </div>
         <div class="actions" style="margin-top:20px">
-          <a class="btn secondary" href="${isAuth ? '#apply' : '#register'}">Apply for ₦250,000 →</a>
+          ${isAuth
+            ? `<a class="btn secondary" href="#apply">Apply for Grant →</a>`
+            : `<a class="btn secondary" href="#register">Create Account →</a>`
+          }
         </div>
       </div>
 
@@ -216,7 +219,7 @@ function home() {
         <span class="cat-badge">CATEGORY B</span>
         <div>
           <span class="eyebrow">REGISTERED BUSINESSES</span>
-          <div class="amount">₦500,000</div>
+          <h3 style="font-size:22px;margin:10px 0 6px">Registered Business Support</h3>
           <p class="muted">One-time enterprise support grant</p>
           <hr class="divider">
           <p class="compact">
@@ -227,7 +230,10 @@ function home() {
           </p>
         </div>
         <div class="actions" style="margin-top:20px">
-          <a class="btn" href="${isAuth ? '#apply' : '#register'}">Apply for ₦500,000 →</a>
+          ${isAuth
+            ? `<a class="btn" href="#apply">Apply for Grant →</a>`
+            : `<a class="btn" href="#register">Create Account →</a>`
+          }
         </div>
       </div>
     </div>
@@ -264,7 +270,7 @@ function home() {
       <article class="card">
         <div class="step-number">02</div>
         <h3>Select Business Category</h3>
-        <p>Choose Unregistered (₦250k) or Registered (₦500k). Upload required identity and CAC certificates.</p>
+        <p>Choose Unregistered or Registered business category. Upload required identity and CAC certificates.</p>
       </article>
       <article class="card">
         <div class="step-number">03</div>
@@ -296,8 +302,8 @@ function about() {
         <p>The Solex Business Grant Programme was instituted to provide direct, non-repayable capital injections to hardworking Nigerian micro and small business owners.</p>
         <p>Recognizing the differing stages of Nigerian business formalization, the programme provides two structured grant tiers:</p>
         <ul>
-          <li><strong>Category A (Unregistered Businesses — ₦250,000)</strong>: Direct support for informal businesses, market traders, and craftsmen without CAC incorporation.</li>
-          <li><strong>Category B (Registered Businesses — ₦500,000)</strong>: Scaled funding for formal enterprises with authenticated CAC corporate registrations.</li>
+          <li><strong>Category A (Unregistered Businesses)</strong>: Direct support for informal businesses, market traders, and craftsmen without CAC incorporation.</li>
+          <li><strong>Category B (Registered Businesses)</strong>: Scaled funding for formal enterprises with authenticated CAC corporate registrations.</li>
         </ul>
         <div class="notice">
           <strong>Important Schedule:</strong> The programme commences on <strong>10 December 2026</strong>. Disbursements are scheduled for December 2026 following thorough verification.
@@ -312,8 +318,8 @@ function about() {
         <p class="compact">
           <strong>Commencement Date:</strong> 10 December 2026<br>
           <strong>Disbursement Window:</strong> December 2026<br>
-          <strong>Tier A Amount:</strong> ₦250,000 (one-time)<br>
-          <strong>Tier B Amount:</strong> ₦500,000 (one-time)<br>
+          <strong>Tier A:</strong> Unregistered Businesses (CAC not required)<br>
+          <strong>Tier B:</strong> Registered Businesses (CAC required)<br>
           <strong>Processing Fee:</strong> ₦1,000 per application<br>
           <strong>Coverage:</strong> All 36 States + FCT
         </p>
@@ -342,10 +348,10 @@ function eligibility() {
 
         <hr class="divider">
         <h2>Category-Specific Criteria</h2>
-        <h3>Category A: Unregistered Businesses (₦250,000)</h3>
+        <h3>Category A: Unregistered Businesses</h3>
         <p>Open to informal traders, artisans, food vendors, and service providers. CAC incorporation is not required. Applicants must provide details of their business location and operating history.</p>
 
-        <h3>Category B: Registered Businesses (₦500,000)</h3>
+        <h3>Category B: Registered Businesses</h3>
         <p>Open to formally incorporated sole proprietorships, partnerships, or limited liability companies. Applicants must submit their valid CAC Registration Number and upload a legible CAC certificate.</p>
       </section>
 
@@ -565,9 +571,9 @@ async function dashboard() {
           <div class="notice">
             Your documents are uploaded. Please complete the ₦1,000 registration fee to finalize submission.
           </div>
-          <a class="btn" href="#apply">Proceed to Fee Payment →</a>
+          <a class="btn prominent-apply-btn" href="#apply">Proceed to Fee Payment →</a>
         ` : a.status === 'draft' ? `
-          <a class="btn" href="#apply">Continue Application →</a>
+          <a class="btn prominent-apply-btn" href="#apply">Apply for Grant →</a>
         ` : `
           <div class="notice">
             Your application is safely received. The review committee will assess your documents and eligibility.
@@ -596,13 +602,31 @@ async function dashboard() {
         <h2>No Active Application</h2>
         <p class="muted">You have not submitted a grant application yet. Complete your profile and apply for business support.</p>
         <div class="actions">
-          <a class="btn" href="#apply">Start New Application →</a>
+          <a class="btn prominent-apply-btn" href="#apply">Apply for Grant →</a>
         </div>
       </section>
     `;
   }
 
   main.innerHTML = heading('APPLICANT WORKSPACE', 'Welcome, ' + escapeHTML(currentUser.full_name), 'Manage your profile, grant application, and supporting documents.') + `
+    <div class="dashboard-hero-action card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;background:var(--accent-warm);border:1px solid #dcd4b8;margin:20px 0 24px;">
+      <div>
+        <span class="eyebrow" style="color:var(--green)">GRANT OPPORTUNITY</span>
+        <h3 style="margin:4px 0 2px">Solex Business Grant Programme</h3>
+        <p class="muted compact" style="margin:0">
+          ${hasApp
+            ? (['submitted', 'under_review', 'approved', 'rejected', 'disbursed'].includes(currentApp.status)
+                ? 'Your application reference is ' + escapeHTML(currentApp.reference_code || currentApp.id) + ' (' + escapeHTML(String(currentApp.status).replace(/_/g, ' ')) + ').'
+                : (currentApp.status === 'awaiting_payment' ? 'Awaiting registration fee payment. Complete fee to finalize submission.' : 'You have a draft application in progress.'))
+            : 'Dual funding tiers for registered and unregistered businesses. Commencing 10 December 2026.'
+          }
+        </p>
+      </div>
+      <div>
+        <a class="btn prominent-apply-btn" href="#apply">${hasApp && currentApp.status !== 'draft' ? 'View Application Status →' : 'Apply for Grant →'}</a>
+      </div>
+    </div>
+
     <div class="stats">
       <div class="stat">
         <small>Profile Status</small>
@@ -611,8 +635,8 @@ async function dashboard() {
       </div>
       <div class="stat">
         <small>Grant Tier</small>
-        <strong>${p.business_category === 'registered' ? '₦500,000' : '₦250,000'}</strong>
-        <p>${p.business_category === 'registered' ? 'Registered Enterprise' : 'Unregistered Business'}</p>
+        <strong>${hasApp ? money(currentApp.grant_amount_kobo) : (p.business_category === 'registered' ? '₦500,000' : (p.business_category === 'unregistered' ? '₦250,000' : 'Select on Apply'))}</strong>
+        <p>${hasApp ? (currentApp.category === 'registered' ? 'Registered Enterprise' : 'Unregistered Business') : (p.business_category === 'registered' ? 'Registered Enterprise' : (p.business_category === 'unregistered' ? 'Unregistered Business' : 'Category pending'))}</p>
       </div>
       <div class="stat">
         <small>Application Stage</small>
@@ -711,20 +735,191 @@ async function apply() {
     return;
   }
 
-  renderApplicationForm();
+  // Start by selecting business category
+  renderCategorySelection();
 }
 
-function renderApplicationForm() {
+function renderCategorySelection(preselectedCategory) {
   const p = currentProfile || {};
-  const isRegistered = p.business_category === 'registered';
+  let selected = preselectedCategory || currentApp?.category || p.business_category || null;
 
-  main.innerHTML = heading('GRANT APPLICATION', 'Apply for Solex Business Support', 'Complete the structured application form. All sections are verified by the backend.') + `
+  main.innerHTML = heading('GRANT APPLICATION', 'Select Your Business Category', 'Choose whether your business is formally registered with CAC or operates informally.') + `
+    <div style="max-width:900px;margin:0 auto">
+      <div class="steps-indicator">
+        <div class="step-dot active" title="Step 1: Category Selection"></div>
+        <div class="step-dot" title="Step 2: Profile & Business Form"></div>
+        <div class="step-dot" title="Step 3: Document Uploads"></div>
+        <div class="step-dot" title="Step 4: Fee & Review"></div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <span class="eyebrow">STEP 1 OF 3</span>
+        <h2>Select Your Business Category</h2>
+        <p class="muted">Please indicate whether your business has valid registration with the Corporate Affairs Commission (CAC). Your category determines documentation requirements and grant amount.</p>
+
+        <div class="category-select-grid">
+          <!-- Option A: Registered Business (CAC registered) -->
+          <div class="cat-select-card ${selected === 'registered' ? 'selected' : ''}" id="cat-card-registered" data-cat="registered">
+            <div>
+              <div class="cat-select-header">
+                <div>
+                  <span class="cat-badge">OPTION A</span>
+                  <h3 style="margin:8px 0 4px">Registered Business</h3>
+                  <small class="muted">CAC registered enterprise or company</small>
+                </div>
+                <input type="radio" name="business_category_choice" value="registered" class="cat-select-radio" ${selected === 'registered' ? 'checked' : ''} aria-label="Option A: Registered Business (CAC registered)">
+              </div>
+
+              <p class="compact" style="margin:12px 0">
+                For formally incorporated business names, sole proprietorships, partnerships, or limited liability enterprises with the Corporate Affairs Commission.
+              </p>
+
+              <ul class="compact muted" style="padding-left:18px;line-height:1.6">
+                <li>CAC Registration Number: <strong>Required</strong></li>
+                <li>CAC Registration Certificate: <strong>Required upload</strong></li>
+                <li>Administrative verification of CAC records is mandatory</li>
+              </ul>
+            </div>
+
+            <div class="cat-amount-reveal ${selected === 'registered' ? '' : 'hidden'}" id="reveal-registered">
+              <small class="muted" style="text-transform:uppercase;font-weight:700;letter-spacing:0.5px">Grant Allocation</small>
+              <div class="amount-figure">₦500,000</div>
+              <p class="compact" style="color:#244832;font-weight:600;margin:0">
+                One-time grant, subject to eligibility verification and approval.
+              </p>
+            </div>
+          </div>
+
+          <!-- Option B: Unregistered Business -->
+          <div class="cat-select-card ${selected === 'unregistered' ? 'selected' : ''}" id="cat-card-unregistered" data-cat="unregistered">
+            <div>
+              <div class="cat-select-header">
+                <div>
+                  <span class="cat-badge">OPTION B</span>
+                  <h3 style="margin:8px 0 4px">Unregistered Business</h3>
+                  <small class="muted">Everyday informal commerce</small>
+                </div>
+                <input type="radio" name="business_category_choice" value="unregistered" class="cat-select-radio" ${selected === 'unregistered' ? 'checked' : ''} aria-label="Option B: Unregistered Business">
+              </div>
+
+              <p class="compact" style="margin:12px 0">
+                For everyday market traders, artisans, food vendors, POS operators, and informal small businesses operating without CAC incorporation.
+              </p>
+
+              <ul class="compact muted" style="padding-left:18px;line-height:1.6">
+                <li>CAC Registration Number: <strong>Not required</strong></li>
+                <li>CAC Certificate Upload: <strong>Not required</strong></li>
+                <li>Valid 11-digit NIN and Nigerian bank account required</li>
+              </ul>
+            </div>
+
+            <div class="cat-amount-reveal ${selected === 'unregistered' ? '' : 'hidden'}" id="reveal-unregistered">
+              <small class="muted" style="text-transform:uppercase;font-weight:700;letter-spacing:0.5px">Grant Allocation</small>
+              <div class="amount-figure">₦250,000</div>
+              <p class="compact" style="color:#244832;font-weight:600;margin:0">
+                One-time grant, subject to eligibility verification and approval.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div id="selection-summary-banner" class="notice ${selected ? '' : 'hidden'}" style="margin:20px 0">
+          <strong id="banner-cat-title">${selected === 'registered' ? 'Selected: Option A — Registered Business (₦500,000 Grant)' : (selected === 'unregistered' ? 'Selected: Option B — Unregistered Business (₦250,000 Grant)' : '')}</strong>
+          <p class="compact" style="margin:4px 0 0" id="banner-cat-desc">
+            ${selected === 'registered'
+              ? 'One-time grant, subject to eligibility verification and approval. You will need to provide your CAC registration number and upload your CAC certificate in the next step.'
+              : (selected === 'unregistered' ? 'One-time grant, subject to eligibility verification and approval. CAC documents are not required.' : '')}
+          </p>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-top:24px">
+          <a class="btn secondary" href="#dashboard">← Back to Dashboard</a>
+          <button id="btn-proceed-form" class="btn prominent-apply-btn" ${selected ? '' : 'disabled'}>
+            ${selected === 'registered' ? 'Proceed with Registered Business Application (₦500,000) →' : (selected === 'unregistered' ? 'Proceed with Unregistered Business Application (₦250,000) →' : 'Select a Category to Continue →')}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const cardReg = document.querySelector('#cat-card-registered');
+  const cardUnreg = document.querySelector('#cat-card-unregistered');
+  const radioReg = cardReg.querySelector('input[type="radio"]');
+  const radioUnreg = cardUnreg.querySelector('input[type="radio"]');
+  const revealReg = document.querySelector('#reveal-registered');
+  const revealUnreg = document.querySelector('#reveal-unregistered');
+  const banner = document.querySelector('#selection-summary-banner');
+  const bannerTitle = document.querySelector('#banner-cat-title');
+  const bannerDesc = document.querySelector('#banner-cat-desc');
+  const proceedBtn = document.querySelector('#btn-proceed-form');
+
+  function updateCategory(cat) {
+    selected = cat;
+    cardReg.classList.toggle('selected', cat === 'registered');
+    cardUnreg.classList.toggle('selected', cat === 'unregistered');
+    radioReg.checked = (cat === 'registered');
+    radioUnreg.checked = (cat === 'unregistered');
+    revealReg.classList.toggle('hidden', cat !== 'registered');
+    revealUnreg.classList.toggle('hidden', cat !== 'unregistered');
+    banner.classList.remove('hidden');
+
+    if (cat === 'registered') {
+      bannerTitle.textContent = 'Selected: Option A — Registered Business (₦500,000 Grant)';
+      bannerDesc.textContent = 'One-time grant, subject to eligibility verification and approval. CAC registration number and CAC certificate upload are required.';
+      proceedBtn.textContent = 'Proceed with Registered Business Application (₦500,000) →';
+      proceedBtn.disabled = false;
+    } else if (cat === 'unregistered') {
+      bannerTitle.textContent = 'Selected: Option B — Unregistered Business (₦250,000 Grant)';
+      bannerDesc.textContent = 'One-time grant, subject to eligibility verification and approval. CAC documents are not required.';
+      proceedBtn.textContent = 'Proceed with Unregistered Business Application (₦250,000) →';
+      proceedBtn.disabled = false;
+    }
+  }
+
+  cardReg.onclick = () => updateCategory('registered');
+  radioReg.onchange = (e) => { e.stopPropagation(); updateCategory('registered'); };
+
+  cardUnreg.onclick = () => updateCategory('unregistered');
+  radioUnreg.onchange = (e) => { e.stopPropagation(); updateCategory('unregistered'); };
+
+  proceedBtn.onclick = () => {
+    if (!selected) return;
+    renderApplicationForm(selected);
+  };
+}
+
+function renderApplicationForm(selectedCategory) {
+  const p = currentProfile || {};
+  const category = selectedCategory || currentApp?.category || p.business_category || 'unregistered';
+  const isRegistered = category === 'registered';
+  const grantAmountDisplay = isRegistered ? '₦500,000' : '₦250,000';
+  const categoryTitle = isRegistered ? 'Registered Business' : 'Unregistered Business';
+  const hasPassport = currentApp?.documents?.some(d => d.kind === 'passport_photo');
+  const hasSupport = currentApp?.documents?.some(d => ['government_id', 'proof_of_address'].includes(d.kind));
+  const hasCacDoc = currentApp?.documents?.some(d => d.kind === 'cac_certificate');
+
+  main.innerHTML = heading('GRANT APPLICATION', 'Apply for ' + categoryTitle + ' Support', 'Complete the structured application form. All sections are verified by the backend.') + `
     <div class="two-col">
       <form id="apply-workflow-form" class="card">
-        <div class="steps-indicator">
-          <div class="step-dot active" title="Step 1: Personal & Bank"></div>
-          <div class="step-dot active" title="Step 2: Business & Category"></div>
-          <div class="step-dot active" title="Step 3: Document Uploads"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+          <div class="steps-indicator" style="margin:0">
+            <div class="step-dot done" title="Step 1: Category Selected"></div>
+            <div class="step-dot active" title="Step 2: Profile & Details"></div>
+            <div class="step-dot active" title="Step 3: Document Uploads"></div>
+          </div>
+          <button type="button" id="btn-change-category" class="btn secondary sm">← Change Business Category</button>
+        </div>
+
+        <input type="hidden" name="business_category" value="${escapeHTML(category)}">
+
+        <div class="notice" style="margin-bottom:20px;border-left:4px solid var(--green)">
+          <strong>Selected Category: ${escapeHTML(categoryTitle)} (${grantAmountDisplay} Grant)</strong>
+          <p class="compact muted" style="margin:4px 0 0">
+            One-time grant, subject to eligibility verification and approval.
+            ${isRegistered
+              ? 'Valid CAC registration number and CAC certificate upload are required.'
+              : 'CAC registration certificate is not required for unregistered businesses.'}
+          </p>
         </div>
 
         <h2>1. Personal Identity & Bank Details</h2>
@@ -779,27 +974,30 @@ function renderApplicationForm() {
         </div>
 
         <hr class="divider">
-        <h2>2. Business Information & Grant Category</h2>
-        <p class="hint">Select your category: Unregistered (₦250k) or Registered (₦500k).</p>
+        <h2>2. Business Information</h2>
+        <p class="hint">${isRegistered ? 'Provide registered CAC business details.' : 'Provide operational business details. CAC incorporation is not required.'}</p>
 
         <div class="form-grid">
-          <label class="field full">Business Category
-            <select name="business_category" id="cat-selector" required>
-              <option value="unregistered" ${!isRegistered ? 'selected' : ''}>Category A — Unregistered Business (₦250,000 Grant)</option>
-              <option value="registered" ${isRegistered ? 'selected' : ''}>Category B — Registered Business with CAC (₦500,000 Grant)</option>
-            </select>
-          </label>
-
-          <div id="cac-fields" class="field full ${isRegistered ? '' : 'hidden'}">
-            <div class="form-grid" style="background:#f9faf6;padding:16px;border-radius:10px;border:1px solid var(--border)">
-              <label class="field">CAC Registration Number
-                <input name="cac_number" id="cac-num-input" placeholder="e.g. RC-123456 or BN-123456" value="${escapeHTML(p.cac_number || '')}">
-              </label>
-              <label class="field">Registered Business Name
-                <input name="registered_business_name" id="cac-name-input" placeholder="Name as recorded by CAC" value="${escapeHTML(p.registered_business_name || '')}">
-              </label>
+          ${isRegistered ? `
+            <div class="field full">
+              <div class="form-grid" style="background:#f9faf6;padding:16px;border-radius:10px;border:1px solid var(--border)">
+                <label class="field">CAC Registration Number
+                  <input name="cac_number" required minlength="3" maxlength="50" placeholder="e.g. RC-123456 or BN-123456" value="${escapeHTML(p.cac_number || '')}">
+                  <span class="hint">Required for registered businesses.</span>
+                </label>
+                <label class="field">Registered Business Name
+                  <input name="registered_business_name" required minlength="2" maxlength="150" placeholder="Name as recorded by CAC" value="${escapeHTML(p.registered_business_name || '')}">
+                  <span class="hint">Must match your CAC registration.</span>
+                </label>
+              </div>
             </div>
-          </div>
+          ` : `
+            <div class="field full">
+              <div class="notice" style="margin:0">
+                <strong>Unregistered Business (Category A):</strong> CAC registration number and certificate are <em>not required</em>.
+              </div>
+            </div>
+          `}
 
           <label class="field">Business / Trading Name
             <input name="business_name" required minlength="2" maxlength="150" placeholder="Trading or shop name" value="${escapeHTML(p.business_name || '')}">
@@ -847,8 +1045,8 @@ function renderApplicationForm() {
 
         <div class="form-grid">
           <label class="field full">Passport Photograph (Portrait Photo)
-            <input type="file" name="passport_file" accept="image/jpeg,image/png" ${currentApp?.documents?.some(d => d.kind === 'passport_photo') ? '' : 'required'}>
-            <span class="hint">A clear frontal portrait photo of yourself, not a passport booklet.</span>
+            <input type="file" name="passport_file" accept="image/jpeg,image/png" ${hasPassport ? '' : 'required'}>
+            <span class="hint">${hasPassport ? '✓ Previously uploaded (select new file to replace)' : 'A clear frontal portrait photo of yourself.'}</span>
           </label>
 
           <label class="field">Supporting Document Type
@@ -858,15 +1056,16 @@ function renderApplicationForm() {
             </select>
           </label>
           <label class="field">Supporting Identity / Address Image
-            <input type="file" name="support_file" accept="image/jpeg,image/png" ${currentApp?.documents?.some(d => ['government_id', 'proof_of_address'].includes(d.kind)) ? '' : 'required'}>
+            <input type="file" name="support_file" accept="image/jpeg,image/png" ${hasSupport ? '' : 'required'}>
+            <span class="hint">${hasSupport ? '✓ Previously uploaded (select new file to replace)' : 'Upload clear image or scan.'}</span>
           </label>
 
-          <div id="cac-doc-row" class="field full ${isRegistered ? '' : 'hidden'}">
-            <label class="field full">CAC Registration Certificate (Category B Only)
-              <input type="file" name="cac_file" id="cac-file-input" accept="image/jpeg,image/png">
-              <span class="hint">Upload clear photo or scan of your CAC certificate of incorporation / registration.</span>
+          ${isRegistered ? `
+            <label class="field full">CAC Registration Certificate (Category B Required)
+              <input type="file" name="cac_file" id="cac-file-input" accept="image/jpeg,image/png" ${hasCacDoc ? '' : 'required'}>
+              <span class="hint">${hasCacDoc ? '✓ Previously uploaded (select new file to replace)' : 'Upload clear photo or scan of your CAC certificate of incorporation / registration.'}</span>
             </label>
-          </div>
+          ` : ''}
         </div>
 
         <label class="check" style="margin-top:20px">
@@ -875,20 +1074,22 @@ function renderApplicationForm() {
         </label>
 
         <div data-error></div>
-        <button class="btn" style="width:100%;margin-top:10px" type="submit">Save & Proceed to Review →</button>
+        <button class="btn prominent-apply-btn" style="width:100%;margin-top:16px" type="submit">Save & Proceed to Fee Payment →</button>
       </form>
 
       <aside class="card">
         <span class="eyebrow">APPLICATION SUMMARY</span>
-        <h2 id="aside-cat-title">${isRegistered ? '₦500,000' : '₦250,000'}</h2>
-        <p class="muted" id="aside-cat-sub">${isRegistered ? 'Registered Business Support' : 'Unregistered Business Support'}</p>
+        <h2>${grantAmountDisplay}</h2>
+        <p class="muted">${categoryTitle} Support</p>
         <hr class="divider">
         <p class="compact">
+          ✓ One-time business grant<br>
           ✓ Personal identity & 11-digit NIN<br>
-          ✓ Supported commercial bank<br>
-          ✓ Portrait photograph<br>
+          ✓ Supported Nigerian commercial bank<br>
+          ✓ Passport photograph<br>
           ✓ Identity card or utility bill<br>
-          <span id="aside-cac-req" class="${isRegistered ? '' : 'hidden'}">✓ CAC Certificate (Tier B)</span>
+          ${isRegistered ? '✓ CAC Registration Certificate (Required)<br>' : '✓ CAC Certificate: <strong>Not required</strong><br>'}
+          ✓ Statutory administrative review
         </p>
         <div class="notice">
           <strong>Registration Fee:</strong> ₦1,000 per application. Covers administrative processing and verification.
@@ -897,31 +1098,8 @@ function renderApplicationForm() {
     </div>
   `;
 
-  const catSelector = document.querySelector('#cat-selector');
-  const cacFields = document.querySelector('#cac-fields');
-  const cacDocRow = document.querySelector('#cac-doc-row');
-  const cacNumInput = document.querySelector('#cac-num-input');
-  const cacNameInput = document.querySelector('#cac-name-input');
-  const cacFileInput = document.querySelector('#cac-file-input');
-  const asideCatTitle = document.querySelector('#aside-cat-title');
-  const asideCatSub = document.querySelector('#aside-cat-sub');
-  const asideCacReq = document.querySelector('#aside-cac-req');
-
-  catSelector.onchange = () => {
-    const isReg = catSelector.value === 'registered';
-    cacFields.classList.toggle('hidden', !isReg);
-    cacDocRow.classList.toggle('hidden', !isReg);
-    asideCacReq.classList.toggle('hidden', !isReg);
-    asideCatTitle.textContent = isReg ? '₦500,000' : '₦250,000';
-    asideCatSub.textContent = isReg ? 'Registered Business Support' : 'Unregistered Business Support';
-    if (isReg) {
-      cacNumInput.setAttribute('required', 'true');
-      cacNameInput.setAttribute('required', 'true');
-    } else {
-      cacNumInput.removeAttribute('required');
-      cacNameInput.removeAttribute('required');
-      cacFileInput.removeAttribute('required');
-    }
+  document.querySelector('#btn-change-category').onclick = () => {
+    renderCategorySelection(category);
   };
 
   const form = document.querySelector('#apply-workflow-form');
@@ -929,7 +1107,6 @@ function renderApplicationForm() {
     e.preventDefault();
     action(form, async () => {
       const fd = new FormData(form);
-      const isReg = fd.get('business_category') === 'registered';
 
       const prof = {
         full_name: fd.get('full_name').trim(),
@@ -940,10 +1117,10 @@ function renderApplicationForm() {
         state_of_origin: fd.get('state_of_origin'),
         lga: fd.get('lga').trim(),
         residential_address: fd.get('residential_address').trim(),
-        business_category: fd.get('business_category'),
+        business_category: category,
         business_name: fd.get('business_name').trim(),
         business_type: fd.get('business_type'),
-        business_description: fd.get('business_description').trim(),
+        business_description: (fd.get('business_name') || '').trim(),
         business_address: fd.get('business_address').trim(),
         state_of_operation: fd.get('state_of_operation'),
         lga_of_operation: fd.get('lga_of_operation').trim(),
@@ -955,7 +1132,7 @@ function renderApplicationForm() {
         account_name: fd.get('account_name').trim()
       };
 
-      if (isReg) {
+      if (isRegistered) {
         prof.cac_number = (fd.get('cac_number') || '').trim();
         prof.registered_business_name = (fd.get('registered_business_name') || '').trim();
         if (!prof.cac_number || !prof.registered_business_name) {
@@ -969,7 +1146,7 @@ function renderApplicationForm() {
       // 2. Start application if not already started
       let app = currentApp;
       if (!app || app.status === 'draft') {
-        app = await api('/applications/start', { method: 'POST', body: { category: prof.business_category } });
+        app = await api('/applications/start', { method: 'POST', body: { category } });
         currentApp = app;
       }
 
@@ -982,7 +1159,7 @@ function renderApplicationForm() {
       if (supportFile && supportFile.size > 0) {
         await uploadFile(app.id, fd.get('support_kind'), supportFile);
       }
-      if (isReg) {
+      if (isRegistered) {
         const cacFile = fd.get('cac_file');
         if (cacFile && cacFile.size > 0) {
           await uploadFile(app.id, 'cac_certificate', cacFile);
@@ -994,7 +1171,7 @@ function renderApplicationForm() {
       currentApp = app;
 
       toast('Application saved! Proceeding to the registration fee stage.');
-      apply();
+      renderPaymentStep(currentApp);
     });
   };
 }
