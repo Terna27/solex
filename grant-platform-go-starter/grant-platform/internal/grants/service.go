@@ -456,6 +456,7 @@ func (s *Service) SaveProfile(userID string, p ApplicantProfile) (ApplicantProfi
 	}
 
 	p.UserID = userID
+	p.FullName = strings.TrimSpace(p.FullName)
 	if p.FullName == "" {
 		p.FullName = u.FullName
 	}
@@ -465,6 +466,9 @@ func (s *Service) SaveProfile(userID string, p ApplicantProfile) (ApplicantProfi
 	if p.Phone == "" {
 		p.Phone = u.Phone
 	}
+
+	// Derive account holder name from applicant's full legal name
+	p.AccountName = p.FullName
 
 	if err := ValidateApplicantProfile(p, s.now()); err != nil {
 		return ApplicantProfile{}, err
@@ -483,6 +487,12 @@ func (s *Service) SaveProfile(userID string, p ApplicantProfile) (ApplicantProfi
 	p.UpdatedAt = now
 
 	err := s.mutate(func(db *database) error {
+		if p.FullName != "" && p.FullName != u.FullName {
+			u.FullName = p.FullName
+			u.UpdatedAt = now
+			db.Users[userID] = u
+		}
+
 		db.Profiles[userID] = p
 
 		// Sync with existing draft or awaiting_payment application if present
@@ -1220,8 +1230,11 @@ func validate(in Input, now time.Time) error {
 	if len(in.LGA) < 2 || len(in.LGA) > 100 {
 		return errors.New("lga must contain 2 to 100 characters")
 	}
-	if len(in.BusinessType) < 2 || len(in.BusinessType) > 80 || len(in.BusinessDescription) < 10 || len(in.BusinessDescription) > 2000 {
-		return errors.New("provide a business type and a description of 10 to 2000 characters")
+	if len(in.BusinessType) < 2 || len(in.BusinessType) > 80 {
+		return errors.New("provide a valid business type")
+	}
+	if len(in.BusinessDescription) > 2000 {
+		return errors.New("business description must not exceed 2000 characters")
 	}
 	return nil
 }
@@ -1230,6 +1243,9 @@ func (s *Service) Create(in Input) (Application, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	in.FullName = strings.TrimSpace(in.FullName)
+	if in.AccountName == "" && in.FullName != "" {
+		in.AccountName = in.FullName
+	}
 	in.Phone = strings.TrimSpace(in.Phone)
 	in.State = strings.TrimSpace(in.State)
 	in.LGA = strings.TrimSpace(in.LGA)

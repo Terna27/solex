@@ -30,6 +30,23 @@ const dateFmt = d => {
 const badge = s => `<span class="badge ${escapeHTML(s || 'draft')}">${escapeHTML(String(s || 'draft').replace(/_/g, ' '))}</span>`;
 const heading = (eyebrow, title, sub) => `<div class="heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p class="muted">${sub}</p></div></div>`;
 
+const GRANT_PURPOSES = {
+  working_capital: 'Business working capital',
+  equipment: 'Purchase of equipment or machinery',
+  inventory: 'Purchase of goods or stock',
+  expansion: 'Business expansion',
+  startup: 'Starting a new business',
+  agriculture: 'Agricultural production or farming',
+  renovation: 'Business premises improvement',
+  technology: 'Technology and digital tools',
+  other: 'Other business-related purpose'
+};
+
+const formatGrantPurpose = val => {
+  if (!val) return 'Not specified';
+  return GRANT_PURPOSES[val] || val;
+};
+
 async function api(path, { method = 'GET', body, token = '' } = {}) {
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -424,9 +441,12 @@ function register() {
         <h2 style="margin-top:10px">Create your account</h2>
         <p class="muted compact">All fields are required. Enter your legal personal information.</p>
 
-        <label class="field">Full Legal Name
+        <label class="field">Full Legal Name (as on NIN)
           <input name="full_name" required minlength="3" maxlength="150" placeholder="e.g. Halima Danjuma" autocomplete="name">
         </label>
+        <div class="notice" style="margin:4px 0 14px;padding:10px 14px;font-size:12px;line-height:1.4">
+          <strong>Important:</strong> Enter your full legal name exactly as it appears on your National Identification Number (NIN). Ensure the spelling and order of your names are correct.
+        </div>
 
         <label class="field">Email Address
           <input name="email" type="email" required placeholder="you@example.ng" autocomplete="email">
@@ -559,6 +579,8 @@ async function dashboard() {
 
         <div class="detail-list">
           <div><dt>Business Category</dt><dd>${catLabel}</dd></div>
+          <div><dt>Purpose of Grant</dt><dd>${escapeHTML(formatGrantPurpose(a.profile?.grant_purpose || p.grant_purpose))}</dd></div>
+          <div><dt>Account Name</dt><dd>${escapeHTML(a.profile?.account_name || p.full_name || currentUser.full_name)}</dd></div>
           <div><dt>Potential Grant Amount</dt><dd><strong>${money(a.grant_amount_kobo)}</strong> (One-time)</dd></div>
           <div><dt>Application Status</dt><dd>${badge(a.status)}</dd></div>
           <div><dt>Processing Fee Status</dt><dd>${a.status === 'awaiting_payment' ? '<span class="badge awaiting_payment">Awaiting ₦1,000 Fee</span>' : '<span class="badge payment_confirmed">Verified ₦1,000</span>'}</dd></div>
@@ -926,9 +948,12 @@ function renderApplicationForm(selectedCategory) {
         <p class="hint">National Identification Number (NIN) must be exactly 11 digits.</p>
 
         <div class="form-grid">
-          <label class="field">Full Legal Name
-            <input name="full_name" required minlength="3" maxlength="150" value="${escapeHTML(p.full_name || currentUser.full_name)}">
+          <label class="field">Full Legal Name (as on NIN)
+            <input name="full_name" id="profile-full-name" required minlength="3" maxlength="150" value="${escapeHTML(p.full_name || currentUser.full_name)}">
           </label>
+          <div class="notice" style="grid-column:1/-1;margin:4px 0 14px;padding:10px 14px;font-size:12px;line-height:1.4">
+            <strong>Important:</strong> Enter your full legal name exactly as it appears on your National Identification Number (NIN). Ensure the spelling and order of your names are correct.
+          </div>
           <label class="field">Date of Birth (18+ only)
             <input name="date_of_birth" type="date" required value="${escapeHTML(p.date_of_birth || '')}">
           </label>
@@ -964,13 +989,14 @@ function renderApplicationForm(selectedCategory) {
           <label class="field">Account Number (10 digits)
             <input name="account_number" required pattern="[0-9]{10}" maxlength="10" minlength="10" inputmode="numeric" placeholder="10-digit NUBAN" value="${escapeHTML(p.account_number || '')}">
           </label>
-          <label class="field full">Account-Holder Name
-            <input name="account_name" required minlength="3" maxlength="150" placeholder="Name as registered with your bank" value="${escapeHTML(p.account_name || '')}">
+          <label class="field full">Account-Holder Name (Derived from Full Legal Name)
+            <input name="account_name" id="derived-account-name" readonly value="${escapeHTML(p.full_name || currentUser.full_name)}" style="background:#f1f5f9;cursor:not-allowed;color:#334155;">
+            <span class="hint">Automatically populated from your full legal name above.</span>
           </label>
         </div>
 
         <div class="notice">
-          <strong>Bank ownership check:</strong> Enter an account in your name. We never ask for bank PINs, passwords, BVN, or OTPs.
+          <strong>Bank Account Notice:</strong> Your commercial bank account should be registered in the same legal name. We never ask for bank PINs, passwords, BVN, or OTPs. (Note: matching names does not constitute independent account ownership verification).
         </div>
 
         <hr class="divider">
@@ -1031,11 +1057,19 @@ function renderApplicationForm(selectedCategory) {
           </label>
 
           <label class="field full">Purpose of the Grant
-            <textarea name="grant_purpose" required minlength="5" maxlength="1000" placeholder="How will this grant support your business growth?">${escapeHTML(p.grant_purpose || '')}</textarea>
-          </label>
-
-          <label class="field full">Intended Use of Funds
-            <textarea name="intended_use" required minlength="5" maxlength="1000" placeholder="Break down how the funds will be deployed (e.g. inventory restock, equipment purchase).">${escapeHTML(p.intended_use || '')}</textarea>
+            <select name="grant_purpose" required>
+              <option value="">Select primary purpose of the grant</option>
+              <option value="working_capital" ${p.grant_purpose === 'working_capital' ? 'selected' : ''}>Business working capital</option>
+              <option value="equipment" ${p.grant_purpose === 'equipment' ? 'selected' : ''}>Purchase of equipment or machinery</option>
+              <option value="inventory" ${p.grant_purpose === 'inventory' ? 'selected' : ''}>Purchase of goods or stock</option>
+              <option value="expansion" ${p.grant_purpose === 'expansion' ? 'selected' : ''}>Business expansion</option>
+              <option value="startup" ${p.grant_purpose === 'startup' ? 'selected' : ''}>Starting a new business</option>
+              <option value="agriculture" ${p.grant_purpose === 'agriculture' ? 'selected' : ''}>Agricultural production or farming</option>
+              <option value="renovation" ${p.grant_purpose === 'renovation' ? 'selected' : ''}>Business premises improvement</option>
+              <option value="technology" ${p.grant_purpose === 'technology' ? 'selected' : ''}>Technology and digital tools</option>
+              <option value="other" ${p.grant_purpose === 'other' ? 'selected' : ''}>Other business-related purpose</option>
+            </select>
+            <span class="hint">Select the category that best describes how the grant will be deployed.</span>
           </label>
         </div>
 
@@ -1102,14 +1136,23 @@ function renderApplicationForm(selectedCategory) {
     renderCategorySelection(category);
   };
 
+  const fullNameInput = document.querySelector('#profile-full-name');
+  const derivedAccountName = document.querySelector('#derived-account-name');
+  if (fullNameInput && derivedAccountName) {
+    fullNameInput.addEventListener('input', () => {
+      derivedAccountName.value = fullNameInput.value.trim();
+    });
+  }
+
   const form = document.querySelector('#apply-workflow-form');
   form.onsubmit = e => {
     e.preventDefault();
     action(form, async () => {
       const fd = new FormData(form);
+      const fullName = fd.get('full_name').trim();
 
       const prof = {
-        full_name: fd.get('full_name').trim(),
+        full_name: fullName,
         date_of_birth: fd.get('date_of_birth'),
         nin: fd.get('nin').trim(),
         phone: fd.get('phone').trim(),
@@ -1120,16 +1163,14 @@ function renderApplicationForm(selectedCategory) {
         business_category: category,
         business_name: fd.get('business_name').trim(),
         business_type: fd.get('business_type'),
-        business_description: (fd.get('business_name') || '').trim(),
         business_address: fd.get('business_address').trim(),
         state_of_operation: fd.get('state_of_operation'),
         lga_of_operation: fd.get('lga_of_operation').trim(),
         operating_history: fd.get('operating_history'),
-        grant_purpose: fd.get('grant_purpose').trim(),
-        intended_use: fd.get('intended_use').trim(),
+        grant_purpose: fd.get('grant_purpose'),
         bank_name: fd.get('bank_name'),
         account_number: fd.get('account_number').trim(),
-        account_name: fd.get('account_name').trim()
+        account_name: fullName
       };
 
       if (isRegistered) {
@@ -1314,10 +1355,11 @@ function renderReviewSubmitStep(app) {
           <div><dt>Applicant Name</dt><dd>${escapeHTML(app.profile?.full_name || currentUser.full_name)}</dd></div>
           <div><dt>NIN</dt><dd>${escapeHTML(app.profile?.nin || 'Provided')}</dd></div>
           <div><dt>Business Category</dt><dd>${app.category === 'registered' ? 'Registered Business' : 'Unregistered Business'}</dd></div>
+          <div><dt>Purpose of Grant</dt><dd>${escapeHTML(formatGrantPurpose(app.profile?.grant_purpose))}</dd></div>
           <div><dt>Potential Grant Amount</dt><dd><strong>${money(app.grant_amount_kobo)}</strong> (One-time)</dd></div>
           <div><dt>Bank Name</dt><dd>${escapeHTML(app.profile?.bank_name)}</dd></div>
           <div><dt>Account Number</dt><dd>${escapeHTML(app.profile?.account_number)}</dd></div>
-          <div><dt>Account Name</dt><dd>${escapeHTML(app.profile?.account_name)}</dd></div>
+          <div><dt>Account Name</dt><dd>${escapeHTML(app.profile?.account_name || app.profile?.full_name || currentUser.full_name)}</dd></div>
           <div><dt>Commencement Date</dt><dd>10 December 2026</dd></div>
         </div>
 
@@ -1640,11 +1682,12 @@ function reviewApp(id) {
               <div><dt>CAC Registration No.</dt><dd><strong>${escapeHTML(p.cac_number || 'Missing')}</strong></dd></div>
               <div><dt>Registered Name (CAC)</dt><dd>${escapeHTML(p.registered_business_name || 'Missing')}</dd></div>
             ` : ''}
-            <div><dt>Bank Details</dt><dd>${escapeHTML(p.bank_name || a.bank_name)}<br>Acc: ${escapeHTML(p.account_number || a.account_number)} (${escapeHTML(p.account_name || a.account_name)})</dd></div>
+            <div><dt>Bank Details</dt><dd>${escapeHTML(p.bank_name || a.bank_name)}<br>Acc: ${escapeHTML(p.account_number || a.account_number)} (${escapeHTML(p.account_name || p.full_name || a.account_name)})</dd></div>
           </div>
 
-          <p class="compact"><strong>Purpose of Grant:</strong> ${escapeHTML(p.grant_purpose || a.business_description)}</p>
-          <p class="compact"><strong>Intended Use of Funds:</strong> ${escapeHTML(p.intended_use || 'Not specified')}</p>
+          <p class="compact"><strong>Purpose of Grant:</strong> ${escapeHTML(formatGrantPurpose(p.grant_purpose || a.business_description))}</p>
+          ${p.intended_use ? `<p class="compact"><strong>Intended Use of Funds:</strong> ${escapeHTML(p.intended_use)}</p>` : ''}
+          ${p.business_description && p.business_description !== p.business_name ? `<p class="compact"><strong>Business Description:</strong> ${escapeHTML(p.business_description)}</p>` : ''}
 
           <hr class="divider">
           <h3>Supporting Documents (${docs.length})</h3>

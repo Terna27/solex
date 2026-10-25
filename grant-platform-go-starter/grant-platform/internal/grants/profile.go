@@ -80,13 +80,13 @@ type ApplicantProfile struct {
 	BusinessCategory       string    `json:"business_category"` // "unregistered" or "registered"
 	BusinessName           string    `json:"business_name"`
 	BusinessType           string    `json:"business_type"`
-	BusinessDescription    string    `json:"business_description"`
+	BusinessDescription    string    `json:"business_description,omitempty"`
 	BusinessAddress        string    `json:"business_address"`
 	StateOfOperation       string    `json:"state_of_operation"`
 	LGAOfOperation         string    `json:"lga_of_operation"`
 	OperatingHistory       string    `json:"operating_history"`
 	GrantPurpose           string    `json:"grant_purpose"`
-	IntendedUse            string    `json:"intended_use"`
+	IntendedUse            string    `json:"intended_use,omitempty"`
 	CACNumber              string    `json:"cac_number,omitempty"`
 	RegisteredBusinessName string    `json:"registered_business_name,omitempty"`
 	BankName               string    `json:"bank_name"`
@@ -149,8 +149,8 @@ func ValidateApplicantProfile(p ApplicantProfile, now time.Time) error {
 	}
 
 	p.BusinessDescription = strings.TrimSpace(p.BusinessDescription)
-	if len(p.BusinessDescription) < 10 || len(p.BusinessDescription) > 2000 {
-		return errors.New("business description must contain 10 to 2000 characters")
+	if len(p.BusinessDescription) > 2000 {
+		return errors.New("business description must not exceed 2000 characters")
 	}
 
 	p.BusinessAddress = strings.TrimSpace(p.BusinessAddress)
@@ -173,13 +173,13 @@ func ValidateApplicantProfile(p ApplicantProfile, now time.Time) error {
 	}
 
 	p.GrantPurpose = strings.TrimSpace(p.GrantPurpose)
-	if len(p.GrantPurpose) < 5 || len(p.GrantPurpose) > 1000 {
-		return errors.New("purpose of grant must contain 5 to 1000 characters")
+	if _, ok := ValidGrantPurposes[p.GrantPurpose]; !ok {
+		return errors.New("select a valid purpose of grant from the options provided")
 	}
 
 	p.IntendedUse = strings.TrimSpace(p.IntendedUse)
-	if len(p.IntendedUse) < 5 || len(p.IntendedUse) > 1000 {
-		return errors.New("intended use of funds must contain 5 to 1000 characters")
+	if len(p.IntendedUse) > 1000 {
+		return errors.New("intended use of funds must not exceed 1000 characters")
 	}
 
 	if cat == CategoryRegistered {

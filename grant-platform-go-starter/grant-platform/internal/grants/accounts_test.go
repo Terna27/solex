@@ -36,7 +36,7 @@ func sampleProfile(category string) ApplicantProfile {
 		StateOfOperation:    "Benue",
 		LGAOfOperation:      "Makurdi",
 		OperatingHistory:    "3-5 years",
-		GrantPurpose:        "Expansion of inventory and logistics support.",
+		GrantPurpose:        "expansion",
 		IntendedUse:         "Bulk purchase of grain inventory and digital POS equipment.",
 		BankName:            "Access Bank",
 		AccountNumber:       "0123456789",
@@ -442,5 +442,129 @@ func TestAdminReviewApprovalAndDisbursement(t *testing.T) {
 	}
 	if exports[0].MaskedNIN != "*******8901" {
 		t.Fatalf("expected masked NIN *******8901, got %s", exports[0].MaskedNIN)
+	}
+}
+
+func TestSimplifiedFormAndDerivedAccountName(t *testing.T) {
+	s := newTestService(t, 5)
+
+	u, _, err := s.Register(RegisterInput{
+		FullName:        "Zainab Ahmed",
+		Email:           "zainab@example.ng",
+		Phone:           "+2348099887766",
+		Password:        "Password123#",
+		ConfirmPassword: "Password123#",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := sampleProfile(CategoryUnregistered)
+	p.UserID = u.ID
+	p.FullName = "Zainab Ahmed"
+
+	// 1. Business description is not required (empty string works)
+	p.BusinessDescription = ""
+
+	// 2. Intended use of funds is not required (empty string works)
+	p.IntendedUse = ""
+
+	// 3. Purpose of grant is required and limited to valid dropdown options
+	p.GrantPurpose = ""
+	if _, err := s.SaveProfile(u.ID, p); err == nil {
+		t.Fatalf("expected error for empty grant_purpose, got nil")
+	}
+
+	p.GrantPurpose = "arbitrary free-text value not in options"
+	if _, err := s.SaveProfile(u.ID, p); err == nil {
+		t.Fatalf("expected error for invalid grant_purpose option, got nil")
+	}
+
+	// Valid dropdown options must succeed
+	for _, opt := range GrantPurposeOptions {
+		p.GrantPurpose = opt.Value
+		saved, err := s.SaveProfile(u.ID, p)
+		if err != nil {
+			t.Fatalf("expected valid grant_purpose %q to succeed, got %v", opt.Value, err)
+		}
+		if saved.GrantPurpose != opt.Value {
+			t.Fatalf("expected %q, got %q", opt.Value, saved.GrantPurpose)
+		}
+	}
+
+	// 4. Full name is required
+	badProf := p
+	badProf.FullName = "   "
+	if err := ValidateApplicantProfile(badProf, s.now()); err == nil {
+		t.Fatalf("expected error for empty FullName, got nil")
+	}
+
+	// 5 & 6. Bank account holder name is derived from applicant's legal name and cannot be spoofed
+	p.FullName = "Zainab Ahmed"
+	p.AccountName = "Mallam Malicious Spoof" // Spoofed account name
+	saved, err := s.SaveProfile(u.ID, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.AccountName != "Zainab Ahmed" {
+		t.Fatalf("expected derived account name %q, got %q (spoof was not overwritten)", "Zainab Ahmed", saved.AccountName)
+	}
+
+	// 7. Changing legal name updates the derived account name and user account
+	p.FullName = "Zainab Ahmed Bello"
+	saved, err = s.SaveProfile(u.ID, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.AccountName != "Zainab Ahmed Bello" {
+		t.Fatalf("expected updated derived account name %q, got %q", "Zainab Ahmed Bello", saved.AccountName)
+	}
+	updatedUser, _ := s.GetUser(u.ID)
+	if updatedUser.FullName != "Zainab Ahmed Bello" {
+		t.Fatalf("expected user account full name %q, got %q", "Zainab Ahmed Bello", updatedUser.FullName)
+	}
+
+	// 8. Existing stored applications remain readable
+	legacyApp := Application{
+		ID:            "legacy-app-1",
+		UserID:        u.ID,
+		ReferenceCode: "LEGACY-001",
+		Category:      CategoryUnregistered,
+		Status:        StatusSubmitted,
+		Profile: ApplicantProfile{
+			FullName:            "Legacy Applicant",
+			NIN:                 "11223344556",
+			BusinessDescription: "Old business description from prior version.",
+			GrantPurpose:        "Legacy free-text purpose of funds.",
+			IntendedUse:         "Old intended use text.",
+			BankName:            "Access Bank",
+			AccountNumber:       "0123456789",
+			AccountName:         "Legacy Applicant",
+		},
+	}
+	_ = s.mutate(func(db *database) error {
+		db.Applications[legacyApp.ID] = legacyApp
+		return nil
+	})
+
+	loadedApp, err := s.AdminGetApplication("legacy-app-1")
+	if err != nil {
+		t.Fatalf("failed to read existing stored application: %v", err)
+	}
+	if loadedApp.Profile.BusinessDescription != "Old business description from prior version." {
+		t.Fatalf("expected old business description preserved, got %q", loadedApp.Profile.BusinessDescription)
+	}
+	if loadedApp.Profile.GrantPurpose != "Legacy free-text purpose of funds." {
+		t.Fatalf("expected old grant purpose preserved, got %q", loadedApp.Profile.GrantPurpose)
+	}
+
+	// FormatGrantPurpose handles legacy free-text gracefully
+	formatted := FormatGrantPurpose(loadedApp.Profile.GrantPurpose)
+	if formatted != "Legacy free-text purpose of funds." {
+		t.Fatalf("expected legacy purpose formatted as-is, got %q", formatted)
+	}
+	formattedValid := FormatGrantPurpose("working_capital")
+	if formattedValid != "Business working capital" {
+		t.Fatalf("expected %q, got %q", "Business working capital", formattedValid)
 	}
 }

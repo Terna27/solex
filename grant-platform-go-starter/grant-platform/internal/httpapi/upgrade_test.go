@@ -111,8 +111,7 @@ func TestFullHTTPUpgradeWorkflow(t *testing.T) {
 		"state_of_operation": "Kano",
 		"lga_of_operation": "Kano Municipal",
 		"operating_history": "3-5 years",
-		"grant_purpose": "Working capital injection to expand inventory.",
-		"intended_use": "Purchase of textile fabric rolls from direct weavers.",
+		"grant_purpose": "working_capital",
 		"bank_name": "Access Bank",
 		"account_number": "0123456789",
 		"account_name": "Halima Danjuma"

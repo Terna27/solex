@@ -76,6 +76,42 @@ var (
 	ErrRateLimited         = errors.New("too many attempts; please try again later")
 )
 
+// PurposeOption represents a valid purpose of grant option.
+type PurposeOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+var GrantPurposeOptions = []PurposeOption{
+	{Value: "working_capital", Label: "Business working capital"},
+	{Value: "equipment", Label: "Purchase of equipment or machinery"},
+	{Value: "inventory", Label: "Purchase of goods or stock"},
+	{Value: "expansion", Label: "Business expansion"},
+	{Value: "startup", Label: "Starting a new business"},
+	{Value: "agriculture", Label: "Agricultural production or farming"},
+	{Value: "renovation", Label: "Business premises improvement"},
+	{Value: "technology", Label: "Technology and digital tools"},
+	{Value: "other", Label: "Other business-related purpose"},
+}
+
+var ValidGrantPurposes = func() map[string]string {
+	m := make(map[string]string, len(GrantPurposeOptions))
+	for _, opt := range GrantPurposeOptions {
+		m[opt.Value] = opt.Label
+	}
+	return m
+}()
+
+func FormatGrantPurpose(value string) string {
+	if label, ok := ValidGrantPurposes[value]; ok {
+		return label
+	}
+	if value == "" {
+		return "Not specified"
+	}
+	return value
+}
+
 // ProgrammeConfig encapsulates programme metadata exposed via API.
 type ProgrammeConfig struct {
 	CommencementDate    string                  `json:"commencement_date"`
@@ -85,6 +121,7 @@ type ProgrammeConfig struct {
 	MinimumAge          int                     `json:"minimum_age"`
 	States              []string                `json:"states"`
 	Banks               []string                `json:"banks"`
+	GrantPurposes       []PurposeOption         `json:"grant_purposes"`
 	Categories          map[string]CategoryInfo `json:"categories"`
 }
 
@@ -119,6 +156,7 @@ func GetProgrammeConfig() ProgrammeConfig {
 		MinimumAge:          18,
 		States:              States,
 		Banks:               Banks,
+		GrantPurposes:       GrantPurposeOptions,
 		Categories: map[string]CategoryInfo{
 			CategoryUnregistered: {
 				Name:        "Unregistered Business Grant",

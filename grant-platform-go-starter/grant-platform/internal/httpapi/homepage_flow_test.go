@@ -181,17 +181,14 @@ func TestAuthenticatedApplicationAndCategoryFlow(t *testing.T) {
 		"residential_address": "45 Market Road, Nsukka",
 		"business_category": "unregistered",
 		"business_name": "Chinedu Provisions",
-		"business_description": "A local retail store selling food staples and grains.",
 		"business_type": "Retail shop",
 		"business_address": "Shop 12 Nsukka Main Market",
 		"state_of_operation": "Enugu",
 		"lga_of_operation": "Nsukka",
 		"operating_history": "3 - 5 years",
-		"grant_purpose": "Restock store inventory with wholesale grains.",
-		"intended_use": "Purchase 20 bags of rice and cooking oil.",
+		"grant_purpose": "inventory",
 		"bank_name": "Access Bank",
-		"account_number": "0123456789",
-		"account_name": "Chinedu Eze"
+		"account_number": "0123456789"
 	}`
 	w = request(h, "PUT", "/api/v1/profile", token1, prof1)
 	if w.Code != 200 {
@@ -261,17 +258,14 @@ func TestAuthenticatedApplicationAndCategoryFlow(t *testing.T) {
 		"cac_number": "RC-998877",
 		"registered_business_name": "Bello Agro Logistics Ltd",
 		"business_name": "Bello Agro Logistics",
-		"business_description": "Agricultural produce cold storage and haulage logistics.",
 		"business_type": "Agriculture & agro-processing",
 		"business_address": "Plot 5 Industrial Layout, Kano",
 		"state_of_operation": "Kano",
 		"lga_of_operation": "Dala",
 		"operating_history": "More than 5 years",
-		"grant_purpose": "Cold storage enhancement for produce.",
-		"intended_use": "Purchase industrial solar inverter and refrigeration units.",
+		"grant_purpose": "equipment",
 		"bank_name": "Zenith Bank",
-		"account_number": "1012345678",
-		"account_name": "Bello Agro Logistics Ltd"
+		"account_number": "1012345678"
 	}`
 	w = request(h, "PUT", "/api/v1/profile", token2, prof2)
 	if w.Code != 200 {
@@ -325,5 +319,141 @@ func TestAuthenticatedApplicationAndCategoryFlow(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &readyApp2)
 	if readyApp2.Status != grants.StatusAwaitingPayment {
 		t.Fatalf("expected status awaiting_payment, got %s", readyApp2.Status)
+	}
+}
+
+func TestHTTPProfileFormSimplificationAndAccountNameSync(t *testing.T) {
+	s, err := grants.New(filepath.Join(t.TempDir(), "grants.json"), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminToken := strings.Repeat("d", 40)
+	h := New(s, adminToken)
+
+	// 1. Programme config contains grant purposes
+	w := request(h, "GET", "/api/v1/programme", "", "")
+	if w.Code != 200 {
+		t.Fatalf("GET /programme returned %d", w.Code)
+	}
+	var prog grants.ProgrammeConfig
+	_ = json.Unmarshal(w.Body.Bytes(), &prog)
+	if len(prog.GrantPurposes) != 9 {
+		t.Fatalf("expected 9 grant purposes, got %d", len(prog.GrantPurposes))
+	}
+
+	// Register user
+	reg := `{"full_name":"Maryam Sani","email":"maryam@example.ng","phone":"+2348055556666","password":"Password123#","confirm_password":"Password123#"}`
+	w = request(h, "POST", "/api/v1/auth/register", "", reg)
+	if w.Code != 201 {
+		t.Fatalf("register failed: %d %s", w.Code, w.Body.String())
+	}
+	var authResp struct {
+		User         grants.User `json:"user"`
+		SessionToken string      `json:"session_token"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &authResp)
+	token := authResp.SessionToken
+
+	// 2. Reject arbitrary free-text grant_purpose
+	badPurposeBody := `{
+		"full_name": "Maryam Sani",
+		"date_of_birth": "1995-04-12",
+		"nin": "55667788990",
+		"phone": "+2348055556666",
+		"email": "maryam@example.ng",
+		"state_of_origin": "Kaduna",
+		"lga": "Zaria",
+		"residential_address": "12 Queen Amina Way, Zaria",
+		"business_category": "unregistered",
+		"business_name": "Maryam Crafts",
+		"business_type": "Manufacturing & crafts",
+		"business_address": "Zaria Central Market",
+		"state_of_operation": "Kaduna",
+		"lga_of_operation": "Zaria",
+		"operating_history": "1 - 2 years",
+		"grant_purpose": "arbitrary_custom_value",
+		"bank_name": "Access Bank",
+		"account_number": "0123456789"
+	}`
+	w = request(h, "PUT", "/api/v1/profile", token, badPurposeBody)
+	if w.Code != 400 {
+		t.Fatalf("expected 400 Bad Request for arbitrary grant_purpose, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 3. Submit profile without business_description and without intended_use, and with spoofed account_name
+	validProfBody := `{
+		"full_name": "Maryam Sani",
+		"date_of_birth": "1995-04-12",
+		"nin": "55667788990",
+		"phone": "+2348055556666",
+		"email": "maryam@example.ng",
+		"state_of_origin": "Kaduna",
+		"lga": "Zaria",
+		"residential_address": "12 Queen Amina Way, Zaria",
+		"business_category": "unregistered",
+		"business_name": "Maryam Crafts",
+		"business_type": "Manufacturing & crafts",
+		"business_address": "Zaria Central Market",
+		"state_of_operation": "Kaduna",
+		"lga_of_operation": "Zaria",
+		"operating_history": "1 - 2 years",
+		"grant_purpose": "working_capital",
+		"bank_name": "Access Bank",
+		"account_number": "0123456789",
+		"account_name": "Imposter Account Name"
+	}`
+	w = request(h, "PUT", "/api/v1/profile", token, validProfBody)
+	if w.Code != 200 {
+		t.Fatalf("expected 200 OK for profile without description and intended use, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 4. Verify account_name was derived from full_name and spoofed name was ignored
+	var profResp struct {
+		Profile grants.ApplicantProfile `json:"profile"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &profResp)
+	if profResp.Profile.AccountName != "Maryam Sani" {
+		t.Fatalf("expected derived account name 'Maryam Sani', got %q", profResp.Profile.AccountName)
+	}
+
+	// 5. Updating legal name updates derived account name
+	updateNameBody := `{
+		"full_name": "Maryam Sani Danbatta",
+		"date_of_birth": "1995-04-12",
+		"nin": "55667788990",
+		"phone": "+2348055556666",
+		"email": "maryam@example.ng",
+		"state_of_origin": "Kaduna",
+		"lga": "Zaria",
+		"residential_address": "12 Queen Amina Way, Zaria",
+		"business_category": "unregistered",
+		"business_name": "Maryam Crafts",
+		"business_type": "Manufacturing & crafts",
+		"business_address": "Zaria Central Market",
+		"state_of_operation": "Kaduna",
+		"lga_of_operation": "Zaria",
+		"operating_history": "1 - 2 years",
+		"grant_purpose": "inventory",
+		"bank_name": "Access Bank",
+		"account_number": "0123456789"
+	}`
+	w = request(h, "PUT", "/api/v1/profile", token, updateNameBody)
+	if w.Code != 200 {
+		t.Fatalf("PUT /profile name update failed: %d %s", w.Code, w.Body.String())
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &profResp)
+	if profResp.Profile.FullName != "Maryam Sani Danbatta" || profResp.Profile.AccountName != "Maryam Sani Danbatta" {
+		t.Fatalf("expected updated name and derived account name 'Maryam Sani Danbatta', got Name=%q AccountName=%q", profResp.Profile.FullName, profResp.Profile.AccountName)
+	}
+
+	// GET /profile also reflects the derived name
+	w = request(h, "GET", "/api/v1/profile", token, "")
+	if w.Code != 200 {
+		t.Fatalf("GET /profile failed: %d", w.Code)
+	}
+	var getProf grants.ApplicantProfile
+	_ = json.Unmarshal(w.Body.Bytes(), &getProf)
+	if getProf.AccountName != "Maryam Sani Danbatta" {
+		t.Fatalf("expected derived account name on GET, got %q", getProf.AccountName)
 	}
 }
