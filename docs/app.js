@@ -1569,20 +1569,81 @@ function adminLoginView() {
   };
 }
 
-async function adminDashboardView() {
-  main.innerHTML = '<div class="empty">Loading administrator workspace…</div>';
+function renderAdminStatsHTML(metrics) {
+  return `
+    <div class="stat"><small>Registered Users</small><strong>${metrics.total_users}</strong><p>Applicant accounts</p></div>
+    <div class="stat"><small>Total Applications</small><strong>${metrics.total_applications}</strong><p>All recorded applications</p></div>
+    <div class="stat"><small>Tier A (Unregistered)</small><strong>${metrics.unregistered_business_apps}</strong><p>₦250,000 grant category</p></div>
+    <div class="stat"><small>Tier B (Registered)</small><strong>${metrics.registered_business_apps}</strong><p>₦500,000 CAC category</p></div>
+    <div class="stat"><small>Awaiting Payment</small><strong>${metrics.applications_awaiting_payment}</strong><p>Pending ₦1,000 fee</p></div>
+    <div class="stat"><small>Submitted / Review</small><strong>${metrics.submitted_applications + metrics.applications_under_review}</strong><p>Queued for assessment</p></div>
+    <div class="stat"><small>Approved Applications</small><strong>${metrics.approved_applications}</strong><p>Funding commitments</p></div>
+    <div class="stat"><small>Disbursed</small><strong>${metrics.disbursed_applications}</strong><p>Paid beneficiaries</p></div>
+    <div class="stat"><small>Fees Collected</small><strong>${money(metrics.verified_fees_collected_kobo)}</strong><p>Verified ₦1,000 fees</p></div>
+    <div class="stat"><small>Grant Commitments</small><strong>${money(metrics.approved_grant_commitments_kobo)}</strong><p>Approved funding total</p></div>
+    <div class="stat"><small>Disbursements Paid</small><strong>${money(metrics.recorded_disbursements_kobo)}</strong><p>Disbursed capital</p></div>
+    <div class="stat"><small>Rejected Applications</small><strong>${metrics.rejected_applications}</strong><p>Decisions with reasons</p></div>
+  `;
+}
 
+async function loadAdmin(targetAppID) {
+  if (targetAppID) {
+    selectedAppID = targetAppID;
+  }
   let metrics;
   try {
     metrics = await api('/admin/metrics');
   } catch (err) {
-    currentAdmin = null;
-    adminToken = '';
-    navigate('/admin/login');
-    return;
+    if (err.message && err.message.toLowerCase().includes('unauthori')) {
+      currentAdmin = null;
+      adminToken = '';
+      navigate('/admin/login');
+      return;
+    }
+    throw err;
   }
 
-  adminDashboard(metrics);
+  let list;
+  try {
+    list = await api('/admin/applications', { token: adminToken });
+    applications = list;
+  } catch (err) {
+    if (err.message && err.message.toLowerCase().includes('unauthori')) {
+      currentAdmin = null;
+      adminToken = '';
+      navigate('/admin/login');
+      return;
+    }
+    throw err;
+  }
+
+  const statsHost = document.querySelector('#admin-stats-grid');
+  if (statsHost) {
+    statsHost.innerHTML = renderAdminStatsHTML(metrics);
+    const countHint = document.querySelector('#admin-apps-count-hint');
+    if (countHint) countHint.textContent = `${applications.length} applications loaded`;
+    renderAdminRows();
+    if (selectedAppID) reviewApp(selectedAppID);
+  } else {
+    await adminDashboard(metrics);
+  }
+}
+
+async function adminDashboardView() {
+  main.innerHTML = '<div class="empty">Loading administrator workspace…</div>';
+  try {
+    const metrics = await api('/admin/metrics');
+    await adminDashboard(metrics);
+  } catch (err) {
+    if (err.message && err.message.toLowerCase().includes('unauthori')) {
+      currentAdmin = null;
+      adminToken = '';
+      navigate('/admin/login');
+      return;
+    }
+    main.innerHTML = `<div class="error">${escapeHTML(err.message)}</div><div style="margin-top:10px"><button class="btn" id="admin-retry-btn">Retry</button></div>`;
+    document.querySelector('#admin-retry-btn')?.addEventListener('click', adminDashboardView);
+  }
 }
 
 async function adminDashboard(metrics) {
@@ -1612,25 +1673,14 @@ async function adminDashboard(metrics) {
       <button id="admin-logout" class="btn danger sm">Sign Out Admin</button>
     </div>
 
-    <div class="stats admin-grid">
-      <div class="stat"><small>Registered Users</small><strong>${metrics.total_users}</strong><p>Applicant accounts</p></div>
-      <div class="stat"><small>Total Applications</small><strong>${metrics.total_applications}</strong><p>All recorded applications</p></div>
-      <div class="stat"><small>Tier A (Unregistered)</small><strong>${metrics.unregistered_business_apps}</strong><p>₦250,000 grant category</p></div>
-      <div class="stat"><small>Tier B (Registered)</small><strong>${metrics.registered_business_apps}</strong><p>₦500,000 CAC category</p></div>
-      <div class="stat"><small>Awaiting Payment</small><strong>${metrics.applications_awaiting_payment}</strong><p>Pending ₦1,000 fee</p></div>
-      <div class="stat"><small>Submitted / Review</small><strong>${metrics.submitted_applications + metrics.applications_under_review}</strong><p>Queued for assessment</p></div>
-      <div class="stat"><small>Approved Applications</small><strong>${metrics.approved_applications}</strong><p>Funding commitments</p></div>
-      <div class="stat"><small>Disbursed</small><strong>${metrics.disbursed_applications}</strong><p>Paid beneficiaries</p></div>
-      <div class="stat"><small>Fees Collected</small><strong>${money(metrics.verified_fees_collected_kobo)}</strong><p>Verified ₦1,000 fees</p></div>
-      <div class="stat"><small>Grant Commitments</small><strong>${money(metrics.approved_grant_commitments_kobo)}</strong><p>Approved funding total</p></div>
-      <div class="stat"><small>Disbursements Paid</small><strong>${money(metrics.recorded_disbursements_kobo)}</strong><p>Disbursed capital</p></div>
-      <div class="stat"><small>Rejected Applications</small><strong>${metrics.rejected_applications}</strong><p>Decisions with reasons</p></div>
+    <div id="admin-stats-grid" class="stats admin-grid">
+      ${renderAdminStatsHTML(metrics)}
     </div>
 
     <section class="card">
       <div class="section-head" style="margin-top:0">
         <h2>Applications Directory</h2>
-        <span class="hint">${applications.length} applications loaded</span>
+        <span id="admin-apps-count-hint" class="hint">${applications.length} applications loaded</span>
       </div>
 
       <div class="toolbar">
@@ -1659,7 +1709,7 @@ async function adminDashboard(metrics) {
     <div id="admin-modal-host"></div>
   `;
 
-  document.querySelector('#admin-refresh').onclick = adminDashboardView;
+  document.querySelector('#admin-refresh').onclick = () => loadAdmin();
   document.querySelector('#admin-logout').onclick = handleAdminLogout;
   document.querySelector('#admin-export-csv').onclick = () => {
     const tokenParam = adminToken ? `&token=${encodeURIComponent(adminToken)}` : '';
@@ -1871,6 +1921,16 @@ function reviewApp(id) {
   if (checksForm) {
     checksForm.onsubmit = e => {
       e.preventDefault();
+      if (checksForm.dataset.submitting === 'true') return;
+      checksForm.dataset.submitting = 'true';
+
+      const checksBtn = checksForm.querySelector('button');
+      const origText = checksBtn ? checksBtn.textContent : '';
+      if (checksBtn) {
+        checksBtn.disabled = true;
+        checksBtn.textContent = 'Saving checks…';
+      }
+
       action(checksForm, async () => {
         const fd = new FormData(checksForm);
         const newChecks = {
@@ -1881,13 +1941,33 @@ function reviewApp(id) {
           bank_account_ownership: fd.has('bank_account_ownership'),
           cac_registration: isReg ? fd.has('cac_registration') : false
         };
-        await api(`/admin/applications/${encodeURIComponent(a.id)}/checks`, {
-          method: 'PUT',
-          token: adminToken,
-          body: newChecks
-        });
-        toast('Checklist updated.');
-        await loadAdmin();
+        try {
+          await api(`/admin/applications/${encodeURIComponent(a.id)}/checks`, {
+            method: 'PUT',
+            token: adminToken,
+            body: newChecks
+          });
+        } catch (err) {
+          checksForm.dataset.submitting = 'false';
+          if (checksBtn) {
+            checksBtn.disabled = false;
+            checksBtn.textContent = origText;
+          }
+          throw err;
+        }
+
+        checksForm.dataset.submitting = 'false';
+        if (checksBtn) {
+          checksBtn.disabled = false;
+          checksBtn.textContent = origText;
+        }
+
+        toast('Verification checklist updated.');
+        try {
+          await loadAdmin(a.id);
+        } catch (refreshErr) {
+          console.warn('Dashboard refresh failed after checklist update:', refreshErr);
+        }
       });
     };
   }
@@ -1897,15 +1977,43 @@ function reviewApp(id) {
   if (approveForm) {
     approveForm.onsubmit = e => {
       e.preventDefault();
+      if (approveForm.dataset.submitting === 'true') return;
+      approveForm.dataset.submitting = 'true';
+
+      const approveBtn = approveForm.querySelector('button');
+      const origText = approveBtn ? approveBtn.textContent : '';
+      if (approveBtn) {
+        approveBtn.disabled = true;
+        approveBtn.textContent = 'Approving application…';
+      }
+
       action(approveForm, async () => {
         const dateVal = new FormData(approveForm).get('disbursement_date');
-        await api(`/admin/applications/${encodeURIComponent(a.id)}/approve`, {
-          method: 'POST',
-          token: adminToken,
-          body: { disbursement_date: dateVal }
-        });
-        toast('Application approved.');
-        await loadAdmin();
+        try {
+          await api(`/admin/applications/${encodeURIComponent(a.id)}/approve`, {
+            method: 'POST',
+            token: adminToken,
+            body: { disbursement_date: dateVal }
+          });
+        } catch (err) {
+          approveForm.dataset.submitting = 'false';
+          if (approveBtn) {
+            approveBtn.disabled = false;
+            approveBtn.textContent = origText;
+          }
+          throw err;
+        }
+
+        // Display clear approval-success message only after server confirms success
+        toast(`Application ${a.reference_code || a.id} approved successfully for ${money(a.grant_amount_kobo)}.`);
+
+        // Refresh administrator application list, metrics, and application details
+        try {
+          await loadAdmin(a.id);
+        } catch (refreshErr) {
+          console.warn('Dashboard refresh failed after approval:', refreshErr);
+          toast('Application approved successfully. Please refresh the dashboard.');
+        }
       });
     };
   }
@@ -1915,15 +2023,40 @@ function reviewApp(id) {
   if (rejectForm) {
     rejectForm.onsubmit = e => {
       e.preventDefault();
+      if (rejectForm.dataset.submitting === 'true') return;
+      rejectForm.dataset.submitting = 'true';
+
+      const rejectBtn = rejectForm.querySelector('button');
+      const origText = rejectBtn ? rejectBtn.textContent : '';
+      if (rejectBtn) {
+        rejectBtn.disabled = true;
+        rejectBtn.textContent = 'Rejecting application…';
+      }
+
       action(rejectForm, async () => {
         const reason = new FormData(rejectForm).get('reason').trim();
-        await api(`/admin/applications/${encodeURIComponent(a.id)}/reject`, {
-          method: 'POST',
-          token: adminToken,
-          body: { reason }
-        });
-        toast('Application rejected with reason.');
-        await loadAdmin();
+        try {
+          await api(`/admin/applications/${encodeURIComponent(a.id)}/reject`, {
+            method: 'POST',
+            token: adminToken,
+            body: { reason }
+          });
+        } catch (err) {
+          rejectForm.dataset.submitting = 'false';
+          if (rejectBtn) {
+            rejectBtn.disabled = false;
+            rejectBtn.textContent = origText;
+          }
+          throw err;
+        }
+
+        toast(`Application ${a.reference_code || a.id} rejected.`);
+        try {
+          await loadAdmin(a.id);
+        } catch (refreshErr) {
+          console.warn('Dashboard refresh failed after rejection:', refreshErr);
+          toast('Application rejected. Please refresh the dashboard.');
+        }
       });
     };
   }
@@ -1932,15 +2065,29 @@ function reviewApp(id) {
   const disburseBtn = host.querySelector('#admin-disburse-btn');
   if (disburseBtn) {
     disburseBtn.onclick = async () => {
+      if (disburseBtn.dataset.submitting === 'true') return;
       if (!confirm(`Confirm disbursement of ${money(a.grant_amount_kobo)} to ${p.full_name}?`)) return;
+      disburseBtn.dataset.submitting = 'true';
+      disburseBtn.disabled = true;
+      const origText = disburseBtn.textContent;
+      disburseBtn.textContent = 'Recording disbursement…';
+
       try {
         await api(`/admin/applications/${encodeURIComponent(a.id)}/disburse`, {
           method: 'POST',
           token: adminToken
         });
-        toast('Disbursement recorded.');
-        await loadAdmin();
+        toast(`Disbursement of ${money(a.grant_amount_kobo)} recorded successfully.`);
+        try {
+          await loadAdmin(a.id);
+        } catch (refreshErr) {
+          console.warn('Dashboard refresh failed after disbursement:', refreshErr);
+          toast('Disbursement recorded. Please refresh the dashboard.');
+        }
       } catch (err) {
+        disburseBtn.dataset.submitting = 'false';
+        disburseBtn.disabled = false;
+        disburseBtn.textContent = origText;
         toast(err.message);
       }
     };

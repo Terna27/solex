@@ -346,3 +346,375 @@ func TestAdminAuth_LegacyAdminTokenCompatibility(t *testing.T) {
 		t.Fatalf("expected 200 with legacy admin token, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestAdminApprovalWorkflow_CompleteAndConflictPrevention(t *testing.T) {
+	s, err := grants.New(filepath.Join(t.TempDir(), "grants.json"), 10)
+	if err != nil {
+		t.Fatalf("failed to create service: %v", err)
+	}
+
+	adminEmail := "lead@solex.ng"
+	adminPass := "AdminP@ss2026!"
+	hash, _ := grants.HashPassword(adminPass)
+	t.Setenv("ADMIN_EMAIL", adminEmail)
+	t.Setenv("ADMIN_PASSWORD_HASH", hash)
+
+	h := New(s, strings.Repeat("x", 40))
+
+	// Admin login
+	loginBody, _ := json.Marshal(map[string]string{
+		"email":    adminEmail,
+		"password": adminPass,
+	})
+	w := request(h, "POST", "/api/v1/admin/auth/login", "", string(loginBody))
+	if w.Code != http.StatusOK {
+		t.Fatalf("admin login failed: %d %s", w.Code, w.Body.String())
+	}
+	var loginRes struct {
+		SessionToken string `json:"session_token"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &loginRes)
+	adminToken := loginRes.SessionToken
+
+	// Register applicant
+	regBody := `{"full_name":"Ngozi Okonjo","email":"ngozi@example.ng","phone":"+2348033331111","password":"Password123#","confirm_password":"Password123#"}`
+	w = request(h, "POST", "/api/v1/auth/register", "", regBody)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("register failed: %d %s", w.Code, w.Body.String())
+	}
+	var regRes struct {
+		SessionToken string `json:"session_token"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &regRes)
+	appToken := regRes.SessionToken
+
+	// Save profile
+	prof := `{
+		"full_name": "Ngozi Okonjo",
+		"date_of_birth": "1990-01-01",
+		"nin": "12345678901",
+		"phone": "+2348033331111",
+		"email": "ngozi@example.ng",
+		"state_of_origin": "Abia",
+		"lga": "Umuahia",
+		"residential_address": "10 Bank Road, Umuahia",
+		"business_category": "unregistered",
+		"business_name": "Ngozi Ventures",
+		"business_type": "Retail",
+		"business_address": "Market Square",
+		"state_of_operation": "Abia",
+		"lga_of_operation": "Umuahia",
+		"operating_history": "2 years",
+		"grant_purpose": "working_capital",
+		"bank_name": "Zenith Bank",
+		"account_number": "0123456789"
+	}`
+	w = request(h, "PUT", "/api/v1/profile", appToken, prof)
+	if w.Code != http.StatusOK {
+		t.Fatalf("save profile failed: %d %s", w.Code, w.Body.String())
+	}
+
+	// Start application
+	w = request(h, "POST", "/api/v1/applications/start", appToken, `{"category":"unregistered"}`)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("start application failed: %d %s", w.Code, w.Body.String())
+	}
+	var app grants.Application
+	_ = json.Unmarshal(w.Body.Bytes(), &app)
+
+	// Upload documents
+	pngBytes := makeTestDocPNG()
+	w = uploadTestDoc(h, appToken, app.ID, "passport_photo", pngBytes)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("upload passport failed: %d %s", w.Code, w.Body.String())
+	}
+	w = uploadTestDoc(h, appToken, app.ID, "government_id", pngBytes)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("upload ID failed: %d %s", w.Code, w.Body.String())
+	}
+
+	// Ready for payment
+	w = request(h, "POST", "/api/v1/applications/ready-for-payment", appToken, `{"application_id":"`+app.ID+`"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ready for payment failed: %d %s", w.Code, w.Body.String())
+	}
+
+	// Payment init & verify
+	w = request(h, "POST", "/api/v1/payments/init", appToken, `{"application_id":"`+app.ID+`"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("payment init failed: %d %s", w.Code, w.Body.String())
+	}
+	var payRes struct {
+		Payment grants.Payment `json:"payment"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &payRes)
+
+	w = request(h, "POST", "/api/v1/payments/verify", appToken, `{"reference":"`+payRes.Payment.Reference+`","simulator_action":"simulate_success"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("payment verify failed: %d %s", w.Code, w.Body.String())
+	}
+
+	// Submit application
+	w = request(h, "POST", "/api/v1/applications/submit", appToken, `{"application_id":"`+app.ID+`"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("submit application failed: %d %s", w.Code, w.Body.String())
+	}
+
+	// Check metrics before approval
+	w = request(h, "GET", "/api/v1/admin/metrics", adminToken, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("admin metrics failed: %d %s", w.Code, w.Body.String())
+	}
+	var mPre grants.AdminMetrics
+	_ = json.Unmarshal(w.Body.Bytes(), &mPre)
+	if mPre.ApprovedApplications != 0 || mPre.SubmittedApplications != 1 {
+		t.Fatalf("pre-approval metrics unexpected: %+v", mPre)
+	}
+
+	// 1. Approval fails before checks are complete
+	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/approve", adminToken, `{"disbursement_date":"2026-12-10"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("approval before checks complete should return 400, got %d %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "all verification checks must be complete prior to approval") {
+		t.Fatalf("expected meaningful checks incomplete error, got %s", w.Body.String())
+	}
+
+	// 2. Complete checklist
+	checksPayload := `{
+		"phone": true,
+		"identity_and_age": true,
+		"address": true,
+		"business": true,
+		"bank_account_ownership": true
+	}`
+	w = request(h, "PUT", "/api/v1/admin/applications/"+app.ID+"/checks", adminToken, checksPayload)
+	if w.Code != http.StatusOK {
+		t.Fatalf("update checks failed: %d %s", w.Code, w.Body.String())
+	}
+
+	// 3. Approval succeeds
+	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/approve", adminToken, `{"disbursement_date":"2026-12-10"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("approval failed: %d %s", w.Code, w.Body.String())
+	}
+	var appvRes struct {
+		Status string `json:"status"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &appvRes)
+	if appvRes.Status != "approved" {
+		t.Fatalf("expected status approved, got %s", appvRes.Status)
+	}
+
+	// 4. Metrics update: approved count = 1, grant commitments = 25,000,000 kobo
+	w = request(h, "GET", "/api/v1/admin/metrics", adminToken, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("metrics failed: %d %s", w.Code, w.Body.String())
+	}
+	var mPost grants.AdminMetrics
+	_ = json.Unmarshal(w.Body.Bytes(), &mPost)
+	if mPost.ApprovedApplications != 1 {
+		t.Errorf("expected 1 approved application, got %d", mPost.ApprovedApplications)
+	}
+	if mPost.ApprovedGrantCommitmentsKobo != 25000000 {
+		t.Errorf("expected 25,000,000 kobo commitments, got %d", mPost.ApprovedGrantCommitmentsKobo)
+	}
+
+	// 5. Application details show approved status and scheduled date
+	w = request(h, "GET", "/api/v1/admin/applications/"+app.ID, adminToken, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("admin get application failed: %d %s", w.Code, w.Body.String())
+	}
+	var appDetails grants.Application
+	_ = json.Unmarshal(w.Body.Bytes(), &appDetails)
+	if appDetails.Status != grants.StatusApproved {
+		t.Errorf("expected status approved, got %s", appDetails.Status)
+	}
+	if appDetails.DisbursementDate != "2026-12-10" {
+		t.Errorf("expected disbursement date 2026-12-10, got %s", appDetails.DisbursementDate)
+	}
+	if appDetails.DisbursementStatus != "scheduled" {
+		t.Errorf("expected disbursement status scheduled, got %s", appDetails.DisbursementStatus)
+	}
+
+	// 6. Duplicate approval returns 409 Conflict (prevents double approval)
+	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/approve", adminToken, `{"disbursement_date":"2026-12-10"}`)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("duplicate approval should return 409 Conflict, got %d %s", w.Code, w.Body.String())
+	}
+
+	// 7. Disbursement records successfully
+	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/disburse", adminToken, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("disburse failed: %d %s", w.Code, w.Body.String())
+	}
+
+	// 8. Metrics reflect disbursement
+	w = request(h, "GET", "/api/v1/admin/metrics", adminToken, "")
+	_ = json.Unmarshal(w.Body.Bytes(), &mPost)
+	if mPost.DisbursedApplications != 1 {
+		t.Errorf("expected 1 disbursed application, got %d", mPost.DisbursedApplications)
+	}
+	if mPost.RecordedDisbursementsKobo != 25000000 {
+		t.Errorf("expected 25,000,000 kobo disbursed, got %d", mPost.RecordedDisbursementsKobo)
+	}
+}
+
+func TestAdminRejectionWorkflow_Complete(t *testing.T) {
+	s, err := grants.New(filepath.Join(t.TempDir(), "grants.json"), 10)
+	if err != nil {
+		t.Fatalf("failed to create service: %v", err)
+	}
+
+	adminEmail := "lead@solex.ng"
+	adminPass := "AdminP@ss2026!"
+	hash, _ := grants.HashPassword(adminPass)
+	t.Setenv("ADMIN_EMAIL", adminEmail)
+	t.Setenv("ADMIN_PASSWORD_HASH", hash)
+
+	h := New(s, strings.Repeat("y", 40))
+
+	// Admin login
+	loginBody, _ := json.Marshal(map[string]string{
+		"email":    adminEmail,
+		"password": adminPass,
+	})
+	w := request(h, "POST", "/api/v1/admin/auth/login", "", string(loginBody))
+	var loginRes struct {
+		SessionToken string `json:"session_token"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &loginRes)
+	adminToken := loginRes.SessionToken
+
+	// Register applicant
+	regBody := `{"full_name":"Tunde Bakare","email":"tunde@example.ng","phone":"+2348055556666","password":"Password123#","confirm_password":"Password123#"}`
+	w = request(h, "POST", "/api/v1/auth/register", "", regBody)
+	var regRes struct {
+		SessionToken string `json:"session_token"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &regRes)
+	appToken := regRes.SessionToken
+
+	// Profile
+	prof := `{
+		"full_name": "Tunde Bakare",
+		"date_of_birth": "1995-03-21",
+		"nin": "98765432101",
+		"phone": "+2348055556666",
+		"email": "tunde@example.ng",
+		"state_of_origin": "Oyo",
+		"lga": "Ibadan North",
+		"residential_address": "12 Ring Road, Ibadan",
+		"business_category": "unregistered",
+		"business_name": "Tunde Tech Supplies",
+		"business_type": "Electronics",
+		"business_address": "Shop 4 Dugbe",
+		"state_of_operation": "Oyo",
+		"lga_of_operation": "Ibadan North",
+		"operating_history": "1 - 2 years",
+		"grant_purpose": "equipment",
+		"bank_name": "First Bank of Nigeria",
+		"account_number": "2012345678"
+	}`
+	_ = request(h, "PUT", "/api/v1/profile", appToken, prof)
+	w = request(h, "POST", "/api/v1/applications/start", appToken, `{"category":"unregistered"}`)
+	var app grants.Application
+	_ = json.Unmarshal(w.Body.Bytes(), &app)
+
+	pngBytes := makeTestDocPNG()
+	_ = uploadTestDoc(h, appToken, app.ID, "passport_photo", pngBytes)
+	_ = uploadTestDoc(h, appToken, app.ID, "government_id", pngBytes)
+	_ = request(h, "POST", "/api/v1/applications/ready-for-payment", appToken, `{"application_id":"`+app.ID+`"}`)
+	w = request(h, "POST", "/api/v1/payments/init", appToken, `{"application_id":"`+app.ID+`"}`)
+	var payRes struct {
+		Payment grants.Payment `json:"payment"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &payRes)
+	w = request(h, "POST", "/api/v1/payments/verify", appToken, `{"reference":"`+payRes.Payment.Reference+`","simulator_action":"simulate_success"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("payment verify failed: %d %s", w.Code, w.Body.String())
+	}
+	w = request(h, "POST", "/api/v1/applications/submit", appToken, `{"application_id":"`+app.ID+`"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("submit application failed: %d %s", w.Code, w.Body.String())
+	}
+
+	// Reject application with reason
+	rejectBody := `{"reason":"Inauthentic identity documentation provided."}`
+	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/reject", adminToken, rejectBody)
+	if w.Code != http.StatusOK {
+		t.Fatalf("rejection failed: %d %s", w.Code, w.Body.String())
+	}
+
+	// Verify metrics reflect rejection
+	w = request(h, "GET", "/api/v1/admin/metrics", adminToken, "")
+	var mPost grants.AdminMetrics
+	_ = json.Unmarshal(w.Body.Bytes(), &mPost)
+	if mPost.RejectedApplications != 1 {
+		t.Errorf("expected 1 rejected application, got %d", mPost.RejectedApplications)
+	}
+
+	// Verify application details reflect rejected status and reason
+	w = request(h, "GET", "/api/v1/admin/applications/"+app.ID, adminToken, "")
+	var appDetails grants.Application
+	_ = json.Unmarshal(w.Body.Bytes(), &appDetails)
+	if appDetails.Status != grants.StatusRejected {
+		t.Errorf("expected status rejected, got %s", appDetails.Status)
+	}
+	if appDetails.Reason != "Inauthentic identity documentation provided." {
+		t.Errorf("expected rejection reason, got %s", appDetails.Reason)
+	}
+
+	// Duplicate rejection returns 409 Conflict
+	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/reject", adminToken, rejectBody)
+	if w.Code != http.StatusConflict {
+		t.Errorf("duplicate rejection should return 409 Conflict, got %d", w.Code)
+	}
+}
+
+func TestAdminFrontend_LoadAdminDefinedAndDoubleSubmitProtection(t *testing.T) {
+	s, err := grants.New(filepath.Join(t.TempDir(), "grants.json"), 10)
+	if err != nil {
+		t.Fatalf("failed to create service: %v", err)
+	}
+	h := New(s, strings.Repeat("x", 40))
+
+	// Fetch /app.js
+	req := httptest.NewRequest("GET", "/app.js", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /app.js, got %d", w.Code)
+	}
+	code := w.Body.String()
+
+	// 1. Assert loadAdmin is defined as a function
+	if !strings.Contains(code, "async function loadAdmin(") && !strings.Contains(code, "function loadAdmin(") {
+		t.Errorf("expected loadAdmin function to be defined in app.js")
+	}
+
+	// 2. Assert approveForm has double-click protection
+	if !strings.Contains(code, "approveForm.dataset.submitting") {
+		t.Errorf("expected approveForm to have duplicate submission check (dataset.submitting)")
+	}
+
+	// 3. Assert rejectForm has double-click protection
+	if !strings.Contains(code, "rejectForm.dataset.submitting") {
+		t.Errorf("expected rejectForm to have duplicate submission check (dataset.submitting)")
+	}
+
+	// 4. Assert disburseBtn has double-click protection
+	if !strings.Contains(code, "disburseBtn.dataset.submitting") {
+		t.Errorf("expected disburseBtn to have duplicate submission check (dataset.submitting)")
+	}
+
+	// 5. Assert checksForm has double-click protection
+	if !strings.Contains(code, "checksForm.dataset.submitting") {
+		t.Errorf("expected checksForm to have duplicate submission check (dataset.submitting)")
+	}
+
+	// 6. Assert refresh error after approval does not mask approval success
+	if !strings.Contains(code, "Dashboard refresh error after approval") && !strings.Contains(code, "Dashboard refresh failed after approval") {
+		t.Errorf("expected guarded dashboard refresh after approval")
+	}
+}
