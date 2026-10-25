@@ -393,7 +393,7 @@ func TestAdminReviewApprovalAndDisbursement(t *testing.T) {
 	if err := s.AdminSetChecks(app.ID, checks); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AdminApprove(app.ID, "2026-12-10"); err == nil {
+	if err := s.AdminApprove(app.ID, "Batch A", "2026-12-10"); err == nil {
 		t.Fatal("approved registered application without completed CAC check")
 	}
 
@@ -404,7 +404,7 @@ func TestAdminReviewApprovalAndDisbursement(t *testing.T) {
 	}
 
 	// Admin approve
-	if err := s.AdminApprove(app.ID, "2026-12-10"); err != nil {
+	if err := s.AdminApprove(app.ID, "Batch A", "2026-12-10"); err != nil {
 		t.Fatalf("admin approval failed: %v", err)
 	}
 

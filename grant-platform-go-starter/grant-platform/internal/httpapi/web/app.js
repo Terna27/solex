@@ -675,15 +675,38 @@ async function dashboard() {
           <div><dt>Business Category</dt><dd>${catLabel}</dd></div>
           <div><dt>Purpose of Grant</dt><dd>${escapeHTML(formatGrantPurpose(a.profile?.grant_purpose || p.grant_purpose))}</dd></div>
           <div><dt>Account Name</dt><dd>${escapeHTML(a.profile?.account_name || p.full_name || currentUser.full_name)}</dd></div>
-          <div><dt>Potential Grant Amount</dt><dd><strong>${money(a.grant_amount_kobo)}</strong> (One-time)</dd></div>
+          <div><dt>Approved Grant Amount</dt><dd><strong style="color:var(--green)">${money(a.grant_amount_kobo)}</strong> (One-time)</dd></div>
           <div><dt>Application Status</dt><dd>${badge(a.status)}</dd></div>
-          <div><dt>Processing Fee Status</dt><dd>${a.status === 'awaiting_payment' ? '<span class="badge awaiting_payment">Awaiting ₦1,000 Fee</span>' : '<span class="badge payment_confirmed">Verified ₦1,000</span>'}</dd></div>
-          <div><dt>Scheduled Disbursement</dt><dd>${a.disbursement_date ? dateFmt(a.disbursement_date) : 'December 2026'}</dd></div>
+          ${a.status === 'approved' || a.status === 'disbursed' ? `
+            <div><dt>Assigned Batch</dt><dd><span class="badge ${a.disbursement_batch === 'Batch B' ? 'batch-b' : 'batch-a'}">${escapeHTML(a.disbursement_batch || 'Batch A')}</span></dd></div>
+            <div><dt>Scheduled Disbursement</dt><dd><strong>${a.disbursement_date ? dateFmt(a.disbursement_date) : 'December 2026'}</strong></dd></div>
+            <div><dt>Actual Payment Status</dt><dd><span class="badge ${a.disbursement_status === 'disbursed' ? 'status-disbursed' : 'status-pending'}">${escapeHTML(String(a.disbursement_status || 'Pending').toUpperCase())}</span></dd></div>
+          ` : `
+            <div><dt>Processing Fee Status</dt><dd>${a.status === 'awaiting_payment' ? '<span class="badge awaiting_payment">Awaiting ₦1,000 Fee</span>' : '<span class="badge payment_confirmed">Verified ₦1,000</span>'}</dd></div>
+            <div><dt>Disbursement Schedule</dt><dd>${a.disbursement_date ? dateFmt(a.disbursement_date) : 'December 2026'}</dd></div>
+          `}
           <div><dt>Documents Uploaded</dt><dd>${docs.length} document(s)</dd></div>
         </div>
 
         ${a.reason ? `<div class="notice warn"><strong>Review Feedback:</strong> ${escapeHTML(a.reason)}</div>` : ''}
-        ${a.status === 'awaiting_payment' ? `
+        ${a.status === 'approved' ? `
+          <div class="notice" style="background:#eaf6ee;border-color:#2e7d32">
+            <strong style="color:#1b5e20;font-size:15px">Grant Application Approved!</strong>
+            <p style="margin:6px 0">Your application has been officially approved for a one-time grant of <strong>${money(a.grant_amount_kobo)}</strong>.</p>
+            <div style="margin:8px 0;line-height:1.6;background:#fff;padding:12px;border:1px solid #c2e2c8;border-radius:6px">
+              <div>Assigned Disbursement Batch: <span class="badge ${a.disbursement_batch === 'Batch B' ? 'batch-b' : 'batch-a'}">${escapeHTML(a.disbursement_batch || 'Batch A')}</span></div>
+              <div>Scheduled Disbursement Date: <strong>${dateFmt(a.disbursement_date)}</strong></div>
+              <div>Actual Payment Status: <span class="badge ${a.disbursement_status === 'disbursed' ? 'status-disbursed' : 'status-pending'}">${escapeHTML(String(a.disbursement_status || 'Pending').toUpperCase())}</span></div>
+            </div>
+            <p class="hint" style="margin:6px 0 0">Please note: The scheduled date is subject to banking clearance and automated electronic settlement. You will receive an email confirmation once payment processing commences.</p>
+          </div>
+        ` : a.status === 'disbursed' ? `
+          <div class="notice" style="background:#e1f0e1;border-color:#2d633a">
+            <strong style="color:#1b5e20;font-size:15px">Grant Disbursed!</strong>
+            <p style="margin:6px 0">Your one-time grant of <strong>${money(a.grant_amount_kobo)}</strong> has been recorded as disbursed to your verified bank account.</p>
+            <p style="margin:4px 0">Actual Payment Status: <span class="badge status-disbursed">DISBURSED</span></p>
+          </div>
+        ` : a.status === 'awaiting_payment' ? `
           <div class="notice">
             Your documents are uploaded. Please complete the ₦1,000 registration fee to finalize submission.
           </div>
@@ -1628,6 +1651,8 @@ function renderAdminStatsHTML(metrics) {
     <div class="stat"><small>Submitted / Review</small><strong>${metrics.submitted_applications + metrics.applications_under_review}</strong><p>Queued for assessment</p></div>
     <div class="stat"><small>Approved Applications</small><strong>${metrics.approved_applications}</strong><p>Funding commitments</p></div>
     <div class="stat"><small>Disbursed</small><strong>${metrics.disbursed_applications}</strong><p>Paid beneficiaries</p></div>
+    <div class="stat"><small>Disbursement Batch A</small><strong>${metrics.batch_a_count || 0}</strong><p>${money(metrics.batch_a_amount_kobo || 0)} scheduled</p></div>
+    <div class="stat"><small>Disbursement Batch B</small><strong>${metrics.batch_b_count || 0}</strong><p>${money(metrics.batch_b_amount_kobo || 0)} scheduled</p></div>
     <div class="stat"><small>Fees Collected</small><strong>${money(metrics.verified_fees_collected_kobo)}</strong><p>Verified ₦1,000 fees</p></div>
     <div class="stat"><small>Grant Commitments</small><strong>${money(metrics.approved_grant_commitments_kobo)}</strong><p>Approved funding total</p></div>
     <div class="stat"><small>Disbursements Paid</small><strong>${money(metrics.recorded_disbursements_kobo)}</strong><p>Disbursed capital</p></div>
@@ -1672,6 +1697,7 @@ async function loadAdmin(targetAppID) {
     const countHint = document.querySelector('#admin-apps-count-hint');
     if (countHint) countHint.textContent = `${applications.length} applications loaded`;
     renderAdminRows();
+    renderDisbursementsTable();
     if (selectedAppID) reviewApp(selectedAppID);
   } else {
     await adminDashboard(metrics);
@@ -1744,6 +1770,11 @@ async function adminDashboard(metrics) {
           <option value="rejected">Rejected</option>
           <option value="disbursed">Disbursed</option>
         </select>
+        <select id="admin-filter-batch" aria-label="Filter batch">
+          <option value="">All Batches</option>
+          <option value="Batch A">Batch A</option>
+          <option value="Batch B">Batch B</option>
+        </select>
         <select id="admin-filter-cat" aria-label="Filter category">
           <option value="">All Categories</option>
           <option value="unregistered">Unregistered (₦250k)</option>
@@ -1752,6 +1783,34 @@ async function adminDashboard(metrics) {
       </div>
 
       <div id="admin-table-container"></div>
+    </section>
+
+    <section class="card" id="admin-disbursements" style="margin-top:24px">
+      <div class="section-head" style="margin-top:0">
+        <div>
+          <span class="eyebrow" style="color:var(--green)">DISBURSEMENT BATCH OPERATIONS</span>
+          <h2>Disbursement Management</h2>
+          <p class="muted compact">Manage approved beneficiaries, monitor Batch A & B schedules, track approval email notifications, and execute grant disbursements.</p>
+        </div>
+        <span id="admin-disburse-count-hint" class="hint">Loading disbursements…</span>
+      </div>
+
+      <div class="toolbar" style="margin-bottom:16px">
+        <input id="admin-disburse-search" aria-label="Search disbursements" placeholder="Search by beneficiary legal name, email, batch, reference…">
+        <select id="admin-disburse-filter-batch" aria-label="Filter by batch">
+          <option value="">All Batches (A & B)</option>
+          <option value="Batch A">Batch A</option>
+          <option value="Batch B">Batch B</option>
+        </select>
+        <select id="admin-disburse-filter-status" aria-label="Filter by payment status">
+          <option value="">All Payment Statuses</option>
+          <option value="scheduled">Scheduled / Pending</option>
+          <option value="processing">Processing</option>
+          <option value="disbursed">Disbursed</option>
+        </select>
+      </div>
+
+      <div id="admin-disbursements-table-container"></div>
     </section>
 
     <div id="admin-review-drawer"></div>
@@ -1769,29 +1828,43 @@ async function adminDashboard(metrics) {
 
   const searchInput = document.querySelector('#admin-search');
   const statusFilter = document.querySelector('#admin-filter-status');
+  const batchFilter = document.querySelector('#admin-filter-batch');
   const catFilter = document.querySelector('#admin-filter-cat');
 
   searchInput.oninput = renderAdminRows;
   statusFilter.onchange = renderAdminRows;
+  if (batchFilter) batchFilter.onchange = renderAdminRows;
   catFilter.onchange = renderAdminRows;
 
+  const disburseSearch = document.querySelector('#admin-disburse-search');
+  const disburseBatchFilter = document.querySelector('#admin-disburse-filter-batch');
+  const disburseStatusFilter = document.querySelector('#admin-disburse-filter-status');
+
+  if (disburseSearch) disburseSearch.oninput = renderDisbursementsTable;
+  if (disburseBatchFilter) disburseBatchFilter.onchange = renderDisbursementsTable;
+  if (disburseStatusFilter) disburseStatusFilter.onchange = renderDisbursementsTable;
+
   renderAdminRows();
+  renderDisbursementsTable();
   if (selectedAppID) reviewApp(selectedAppID);
 }
 
 function renderAdminRows() {
   const q = (document.querySelector('#admin-search')?.value || '').toLowerCase();
   const status = document.querySelector('#admin-filter-status')?.value || '';
+  const batch = document.querySelector('#admin-filter-batch')?.value || '';
   const cat = document.querySelector('#admin-filter-cat')?.value || '';
 
   const rows = applications.filter(a => {
     if (status && a.status !== status) return false;
     if (cat && a.category !== cat) return false;
+    if (batch && a.disbursement_batch !== batch) return false;
     if (q) {
       const hay = [
         a.profile?.full_name, a.full_name,
         a.profile?.business_name, a.business_name,
         a.profile?.state_of_operation, a.state,
+        a.disbursement_batch, a.disbursement_date,
         a.reference_code, a.id
       ].join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
@@ -1809,7 +1882,7 @@ function renderAdminRows() {
           <tr>
             <th>APPLICANT / BUSINESS</th>
             <th>TIER & AMOUNT</th>
-            <th>LOCATION</th>
+            <th>BATCH / SCHEDULE</th>
             <th>STATUS</th>
             <th>ACTION</th>
           </tr>
@@ -1826,8 +1899,10 @@ function renderAdminRows() {
                 <small><strong>${money(a.grant_amount_kobo)}</strong></small>
               </td>
               <td>
-                ${escapeHTML(a.profile?.state_of_operation || a.state || 'N/A')}
-                <small>${escapeHTML(a.profile?.lga_of_operation || a.lga || '')}</small>
+                ${a.status === 'approved' || a.status === 'disbursed' ? `
+                  <span class="badge ${a.disbursement_batch === 'Batch B' ? 'batch-b' : 'batch-a'}">${escapeHTML(a.disbursement_batch || 'Batch A')}</span>
+                  <small>${a.disbursement_date ? dateFmt(a.disbursement_date) : 'Pending Date'}</small>
+                ` : '<small class="muted">Pending Approval</small>'}
               </td>
               <td>${badge(a.status)}</td>
               <td>
@@ -1838,7 +1913,98 @@ function renderAdminRows() {
         </tbody>
       </table>
     </div>
-  ` : '<div class="empty">No applications match the current filter.</div>';
+  ` : `
+    <div class="empty">No applications match the current filter criteria.</div>
+  `;
+
+  container.querySelectorAll('[data-review-id]').forEach(b => {
+    b.onclick = () => {
+      reviewApp(b.dataset.reviewId);
+      document.querySelector('#admin-review-drawer')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+  });
+}
+
+function renderDisbursementsTable() {
+  const container = document.querySelector('#admin-disbursements-table-container');
+  if (!container) return;
+
+  const q = (document.querySelector('#admin-disburse-search')?.value || '').toLowerCase();
+  const batch = document.querySelector('#admin-disburse-filter-batch')?.value || '';
+  const status = document.querySelector('#admin-disburse-filter-status')?.value || '';
+
+  const approvedApps = applications.filter(a => a.status === 'approved' || a.status === 'disbursed');
+  const filtered = approvedApps.filter(a => {
+    if (batch && a.disbursement_batch !== batch) return false;
+    if (status) {
+      const curStatus = (a.disbursement_status || 'scheduled').toLowerCase();
+      if (status === 'scheduled' && curStatus !== 'scheduled' && curStatus !== 'pending') return false;
+      if (status !== 'scheduled' && curStatus !== status) return false;
+    }
+    if (q) {
+      const hay = [
+        a.profile?.full_name, a.full_name,
+        a.profile?.email, a.email,
+        a.profile?.bank_name, a.bank_name,
+        a.disbursement_batch, a.disbursement_date,
+        a.reference_code, a.id
+      ].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const countHint = document.querySelector('#admin-disburse-count-hint');
+  if (countHint) {
+    countHint.textContent = `${filtered.length} of ${approvedApps.length} approved beneficiaries`;
+  }
+
+  container.innerHTML = filtered.length ? `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>BENEFICIARY / REFERENCE</th>
+            <th>GRANT AMOUNT</th>
+            <th>BATCH</th>
+            <th>SCHEDULED DATE</th>
+            <th>PAYMENT STATUS</th>
+            <th>ACTIONS</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filtered.map(a => `
+            <tr>
+              <td>
+                <strong>${escapeHTML(a.profile?.full_name || a.full_name || 'Beneficiary')}</strong>
+                <small>${escapeHTML(a.reference_code || a.id)} · ${escapeHTML(a.profile?.email || a.email || '')}</small>
+              </td>
+              <td>
+                <strong>${money(a.grant_amount_kobo)}</strong>
+                <small>${a.category === 'registered' ? 'Registered (₦500k)' : 'Unregistered (₦250k)'}</small>
+              </td>
+              <td>
+                <span class="badge ${a.disbursement_batch === 'Batch B' ? 'batch-b' : 'batch-a'}">${escapeHTML(a.disbursement_batch || 'Batch A')}</span>
+              </td>
+              <td>
+                <strong>${dateFmt(a.disbursement_date)}</strong>
+              </td>
+              <td>
+                <span class="badge ${a.disbursement_status === 'disbursed' ? 'status-disbursed' : 'status-pending'}">
+                  ${escapeHTML(String(a.disbursement_status || 'Scheduled').toUpperCase())}
+                </span>
+              </td>
+              <td>
+                <button class="btn secondary sm" data-review-id="${escapeHTML(a.id)}">Review & Schedule →</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  ` : `
+    <div class="empty">No approved beneficiaries match the current filter criteria.</div>
+  `;
 
   container.querySelectorAll('[data-review-id]').forEach(b => {
     b.onclick = () => {
@@ -1938,12 +2104,37 @@ function reviewApp(id) {
           <h3>Administrative Decision</h3>
 
           ${a.status !== 'approved' && a.status !== 'disbursed' ? `
-            <form id="admin-approve-form" style="margin-bottom:20px">
-              <label class="field">Scheduled One-Time Disbursement Date
-                <input name="disbursement_date" type="date" required value="${a.disbursement_date || '2026-12-10'}">
+            <form id="admin-approve-form" class="card" style="margin-bottom:20px;background:#fbfdf9;border:1px solid #c2e2c8">
+              <span class="eyebrow" style="color:var(--green)">DISBURSEMENT APPROVAL CONFIRMATION</span>
+              <h4 style="margin:4px 0 10px">Confirm Grant Approval & Batch Schedule</h4>
+
+              <div class="verification-dossier" style="margin-bottom:14px">
+                <div><strong>Applicant Legal Name:</strong> ${escapeHTML(p.full_name || a.full_name)}</div>
+                <div><strong>Verified Email Address:</strong> ${escapeHTML(p.email || a.email)}</div>
+                <div><strong>Business Category:</strong> ${isReg ? 'Registered Business (CAC)' : 'Unregistered Business'}</div>
+                <div><strong>Approved Grant Amount:</strong> <strong style="color:var(--green);font-size:15px">${money(a.grant_amount_kobo)}</strong> (One-time, non-refundable)</div>
+              </div>
+
+              <label class="field">Disbursement Batch <span style="color:red">*</span>
+                <select name="disbursement_batch" required>
+                  <option value="">-- Select Disbursement Batch --</option>
+                  <option value="Batch A" ${a.disbursement_batch === 'Batch A' ? 'selected' : ''}>Batch A</option>
+                  <option value="Batch B" ${a.disbursement_batch === 'Batch B' ? 'selected' : ''}>Batch B</option>
+                </select>
               </label>
+
+              <label class="field">Scheduled One-Time Disbursement Date <span style="color:red">*</span>
+                <input name="disbursement_date" type="date" required min="2026-12-01" max="2026-12-31" value="${a.disbursement_date || '2026-12-10'}">
+                <small class="hint">Disbursement Schedule: December 2026</small>
+              </label>
+
+              <label class="check" style="margin:12px 0 14px">
+                <input type="checkbox" name="confirm_verification" required>
+                <span>I confirm that the applicant legal name, email, grant amount (${money(a.grant_amount_kobo)}), and batch schedule are verified.</span>
+              </label>
+
               <div data-error></div>
-              <button class="btn" style="width:100%;margin-top:10px">Approve for ${money(a.grant_amount_kobo)}</button>
+              <button class="btn" style="width:100%;margin-top:6px" type="submit">Confirm Approval & Send Email Notification →</button>
             </form>
 
             <form id="admin-reject-form">
@@ -1954,9 +2145,38 @@ function reviewApp(id) {
               <button class="btn danger" style="width:100%;margin-top:10px">Reject Application</button>
             </form>
           ` : a.status === 'approved' ? `
-            <div class="notice">
-              Application approved for <strong>${money(a.grant_amount_kobo)}</strong> scheduled for <strong>${dateFmt(a.disbursement_date)}</strong>.
+            <div class="notice" style="background:#eaf6ee;border-color:#2e7d32">
+              <h4 style="margin:0 0 6px;color:#1b5e20">Application Approved</h4>
+              <p style="margin:4px 0">Approved Grant: <strong>${money(a.grant_amount_kobo)}</strong></p>
+              <p style="margin:4px 0">Assigned Batch: <span class="badge ${a.disbursement_batch === 'Batch B' ? 'batch-b' : 'batch-a'}">${escapeHTML(a.disbursement_batch || 'Batch A')}</span></p>
+              <p style="margin:4px 0">Scheduled Disbursement: <strong>${dateFmt(a.disbursement_date)}</strong></p>
+              <p style="margin:4px 0">Payment Status: <span class="badge ${a.disbursement_status === 'disbursed' ? 'status-disbursed' : 'status-pending'}">${escapeHTML(String(a.disbursement_status || 'Pending').toUpperCase())}</span></p>
             </div>
+
+            <!-- Form to Update Batch or Scheduled Date with audit trail & notification -->
+            <form id="admin-reschedule-form" class="card" style="margin:16px 0;background:#fafbfd;border:1px solid #d0d7de">
+              <h4 style="margin:0 0 8px">Adjust Batch / Disbursement Date</h4>
+              <p class="hint" style="margin-bottom:10px">Updates the applicant schedule, notifies the applicant by email, and logs an audit event.</p>
+
+              <label class="field">Assigned Batch
+                <select name="disbursement_batch" required>
+                  <option value="Batch A" ${a.disbursement_batch === 'Batch A' ? 'selected' : ''}>Batch A</option>
+                  <option value="Batch B" ${a.disbursement_batch === 'Batch B' ? 'selected' : ''}>Batch B</option>
+                </select>
+              </label>
+
+              <label class="field">Scheduled Disbursement Date
+                <input name="disbursement_date" type="date" required min="2026-12-01" max="2026-12-31" value="${a.disbursement_date || '2026-12-10'}">
+              </label>
+
+              <label class="field">Reason for Schedule Adjustment
+                <input name="reason" type="text" required placeholder="e.g. Administrative batch rebalancing" minlength="5" maxlength="200">
+              </label>
+
+              <div data-error></div>
+              <button class="btn secondary sm" style="width:100%;margin-top:6px" type="submit">Update Schedule & Notify Applicant</button>
+            </form>
+
             <button id="admin-disburse-btn" class="btn" style="width:100%">Record Grant Disbursement →</button>
           ` : `
             <div class="notice" style="background:#e1f0e1;border-color:#2d633a">
@@ -2087,12 +2307,17 @@ function reviewApp(id) {
       }
 
       action(approveForm, async () => {
-        const dateVal = new FormData(approveForm).get('disbursement_date');
+        const fd = new FormData(approveForm);
+        const batchVal = fd.get('disbursement_batch');
+        const dateVal = fd.get('disbursement_date');
         try {
           await api(`/admin/applications/${encodeURIComponent(a.id)}/approve`, {
             method: 'POST',
             token: adminToken,
-            body: { disbursement_date: dateVal }
+            body: {
+              disbursement_batch: batchVal,
+              disbursement_date: dateVal
+            }
           });
         } catch (err) {
           approveForm.dataset.submitting = 'false';
@@ -2104,7 +2329,7 @@ function reviewApp(id) {
         }
 
         // Display clear approval-success message only after server confirms success
-        toast(`Application ${a.reference_code || a.id} approved successfully for ${money(a.grant_amount_kobo)}.`);
+        toast(`Application ${a.reference_code || a.id} approved successfully for ${money(a.grant_amount_kobo)} (${batchVal}).`);
 
         // Refresh administrator application list, metrics, and application details
         try {
@@ -2112,6 +2337,56 @@ function reviewApp(id) {
         } catch (refreshErr) {
           console.warn('Dashboard refresh failed after approval:', refreshErr);
           toast('Application approved successfully. Please refresh the dashboard.');
+        }
+      });
+    };
+  }
+
+  // Reschedule form handler
+  const rescheduleForm = host.querySelector('#admin-reschedule-form');
+  if (rescheduleForm) {
+    rescheduleForm.onsubmit = e => {
+      e.preventDefault();
+      if (rescheduleForm.dataset.submitting === 'true') return;
+      rescheduleForm.dataset.submitting = 'true';
+
+      const reschedBtn = rescheduleForm.querySelector('button');
+      const origText = reschedBtn ? reschedBtn.textContent : '';
+      if (reschedBtn) {
+        reschedBtn.disabled = true;
+        reschedBtn.textContent = 'Updating schedule…';
+      }
+
+      action(rescheduleForm, async () => {
+        const fd = new FormData(rescheduleForm);
+        const newBatch = fd.get('disbursement_batch');
+        const newDate = fd.get('disbursement_date');
+        const reason = fd.get('reason');
+
+        try {
+          await api(`/admin/applications/${encodeURIComponent(a.id)}/disbursement-schedule`, {
+            method: 'PUT',
+            token: adminToken,
+            body: {
+              disbursement_batch: newBatch,
+              disbursement_date: newDate,
+              reason: reason
+            }
+          });
+        } catch (err) {
+          rescheduleForm.dataset.submitting = 'false';
+          if (reschedBtn) {
+            reschedBtn.disabled = false;
+            reschedBtn.textContent = origText;
+          }
+          throw err;
+        }
+
+        toast(`Disbursement schedule updated to ${newBatch} (${newDate}). Applicant notified.`);
+        try {
+          await loadAdmin(a.id);
+        } catch (refreshErr) {
+          console.warn('Dashboard refresh failed after rescheduling:', refreshErr);
         }
       });
     };
@@ -2208,8 +2483,18 @@ async function showAdminEmails() {
       <div style="max-height:60vh;overflow-y:auto">
         ${emails.length ? emails.map(m => `
           <div class="card" style="margin-bottom:12px;background:#fcfdfa">
-            <p><strong>To:</strong> ${escapeHTML(m.to)} · <strong>Status:</strong> ${escapeHTML(m.status)} · <small>${escapeHTML(m.created_at)}</small></p>
-            <p><strong>Subject:</strong> ${escapeHTML(m.subject)}</p>
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+              <div>
+                <strong>To:</strong> ${escapeHTML(m.to)} · <span class="badge status-${escapeHTML(String(m.status).replace(/_/g, '-'))}">${escapeHTML(m.status)}</span>
+                ${m.attempts ? `<small> · Attempts: ${m.attempts}</small>` : ''}
+                <small> · ${escapeHTML(m.created_at)}</small>
+              </div>
+              ${m.status === 'failed' || m.status === 'queued' ? `
+                <button type="button" class="btn secondary sm" style="padding:4px 10px;font-size:12px" data-retry-email="${escapeHTML(m.id)}">↻ Retry Delivery</button>
+              ` : ''}
+            </div>
+            ${m.last_error ? `<p style="color:#b91c1c;margin:4px 0;font-size:12px"><strong>Delivery Error:</strong> ${escapeHTML(m.last_error)}</p>` : ''}
+            <p style="margin:4px 0"><strong>Subject:</strong> ${escapeHTML(m.subject)}</p>
             <pre style="white-space:pre-wrap;background:#fff;padding:12px;border:1px solid var(--border);border-radius:6px;font-size:12px">${escapeHTML(m.body)}</pre>
           </div>
         `).join('') : '<p class="muted">No emails queued or sent yet.</p>'}
@@ -2218,6 +2503,28 @@ async function showAdminEmails() {
     document.body.append(dialog);
     dialog.querySelector('button').onclick = () => dialog.close();
     dialog.addEventListener('close', () => dialog.remove(), { once: true });
+
+    dialog.querySelectorAll('[data-retry-email]').forEach(btn => {
+      btn.onclick = async () => {
+        const emailId = btn.dataset.retryEmail;
+        btn.disabled = true;
+        btn.textContent = 'Retrying…';
+        try {
+          await api(`/admin/emails/${encodeURIComponent(emailId)}/retry`, {
+            method: 'POST',
+            token: adminToken
+          });
+          toast('Email delivered successfully.');
+          dialog.close();
+          showAdminEmails();
+        } catch (err) {
+          toast(err.message);
+          btn.disabled = false;
+          btn.textContent = '↻ Retry Delivery';
+        }
+      };
+    });
+
     dialog.showModal();
   } catch (err) {
     toast(err.message);

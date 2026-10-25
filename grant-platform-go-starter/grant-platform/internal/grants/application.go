@@ -1,6 +1,7 @@
 package grants
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -23,6 +24,39 @@ func (c ApplicationChecks) Complete(category string) bool {
 	return base
 }
 
+const (
+	DisbursementBatchA = "Batch A"
+	DisbursementBatchB = "Batch B"
+)
+
+func NormalizeBatch(b string) (string, error) {
+	b = strings.TrimSpace(b)
+	clean := strings.ToLower(strings.ReplaceAll(b, "_", " "))
+	switch clean {
+	case "batch a", "a":
+		return DisbursementBatchA, nil
+	case "batch b", "b":
+		return DisbursementBatchB, nil
+	default:
+		return "", errors.New("invalid disbursement batch: must be Batch A or Batch B")
+	}
+}
+
+func ValidateDisbursementDate(dStr string) (time.Time, error) {
+	dStr = strings.TrimSpace(dStr)
+	if dStr == "" {
+		return time.Time{}, errors.New("scheduled disbursement date is required")
+	}
+	t, err := time.Parse("2006-01-02", dStr)
+	if err != nil {
+		return time.Time{}, errors.New("scheduled disbursement date must be a valid date in YYYY-MM-DD format")
+	}
+	if t.Year() != 2026 || t.Month() != time.December {
+		return time.Time{}, errors.New("scheduled disbursement date must fall within December 2026 according to the programme schedule")
+	}
+	return t, nil
+}
+
 type Application struct {
 	ID                  string            `json:"id"`
 	UserID              string            `json:"user_id,omitempty"`
@@ -34,6 +68,7 @@ type Application struct {
 	Checks              ApplicationChecks `json:"checks"`
 	Reason              string            `json:"reason,omitempty"`
 	PaymentID           string            `json:"payment_id,omitempty"`
+	DisbursementBatch   string            `json:"disbursement_batch,omitempty"`
 	DisbursementDate    string            `json:"disbursement_date,omitempty"`
 	DisbursementStatus  string            `json:"disbursement_status,omitempty"`
 	Profile             ApplicantProfile  `json:"profile"`

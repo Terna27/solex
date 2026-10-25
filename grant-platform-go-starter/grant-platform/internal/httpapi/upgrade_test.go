@@ -214,7 +214,7 @@ func TestFullHTTPUpgradeWorkflow(t *testing.T) {
 	}
 
 	// Admin approve
-	approveBody := `{"disbursement_date":"2026-12-10"}`
+	approveBody := `{"disbursement_batch":"Batch A","disbursement_date":"2026-12-10"}`
 	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/approve", adminToken, approveBody)
 	if w.Code != 200 {
 		t.Fatalf("POST /admin/approve failed: %d %s", w.Code, w.Body.String())

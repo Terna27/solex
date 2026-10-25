@@ -25,6 +25,10 @@ type AdminMetrics struct {
 	ApprovedApplications         int   `json:"approved_applications"`
 	RejectedApplications         int   `json:"rejected_applications"`
 	DisbursedApplications        int   `json:"disbursed_applications"`
+	BatchACount                  int   `json:"batch_a_count"`
+	BatchBCount                  int   `json:"batch_b_count"`
+	BatchAAmountKobo             int64 `json:"batch_a_amount_kobo"`
+	BatchBAmountKobo             int64 `json:"batch_b_amount_kobo"`
 	VerifiedFeesCollectedKobo    int64 `json:"verified_fees_collected_kobo"`
 	ApprovedGrantCommitmentsKobo int64 `json:"approved_grant_commitments_kobo"`
 	RecordedDisbursementsKobo    int64 `json:"recorded_disbursements_kobo"`
@@ -45,6 +49,8 @@ type ExportRecord struct {
 	Status             string `json:"status"`
 	GrantAmountKobo    int64  `json:"grant_amount_kobo"`
 	PaymentStatus      string `json:"payment_status"`
+	DisbursementBatch  string `json:"disbursement_batch,omitempty"`
+	DisbursementDate   string `json:"disbursement_date,omitempty"`
 	DisbursementStatus string `json:"disbursement_status"`
 	CreatedAt          string `json:"created_at"`
 }

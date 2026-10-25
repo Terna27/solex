@@ -159,12 +159,16 @@ func New(path string, capacity int) (*Service, error) {
 		}
 	}
 
-	// Default email sender: records in memory/db outbox (saved atomically during submission)
-	s.emailSender = NewDevelopmentOutboxSender(func(msg EmailMessage) error {
-		return nil
-	})
+	// Default email sender: uses environment or development outbox
+	s.emailSender = NewEmailSenderFromEnv()
 
 	return s, nil
+}
+
+func (s *Service) EmailSender() EmailSender {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.emailSender
 }
 
 func (s *Service) SetEmailSender(sender EmailSender) {
@@ -1107,6 +1111,17 @@ func (s *Service) AdminMetrics() AdminMetrics {
 			m.ApprovedGrantCommitmentsKobo += a.GrantAmountKobo
 			m.RecordedDisbursementsKobo += a.GrantAmountKobo
 		}
+
+		if a.Status == StatusApproved || a.Status == StatusDisbursed {
+			normBatch := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(a.DisbursementBatch, "_", " ")))
+			if normBatch == "batch a" || normBatch == "a" {
+				m.BatchACount++
+				m.BatchAAmountKobo += a.GrantAmountKobo
+			} else if normBatch == "batch b" || normBatch == "b" {
+				m.BatchBCount++
+				m.BatchBAmountKobo += a.GrantAmountKobo
+			}
+		}
 	}
 
 	for _, p := range s.db.Payments {
@@ -1118,11 +1133,12 @@ func (s *Service) AdminMetrics() AdminMetrics {
 	return m
 }
 
-func (s *Service) AdminListApplications(q, stateFilter, catFilter, statusFilter string) []Application {
+func (s *Service) AdminListApplications(q, stateFilter, catFilter, statusFilter, batchFilter string) []Application {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	q = strings.ToLower(strings.TrimSpace(q))
+	batchFilter = strings.ToLower(strings.TrimSpace(strings.ReplaceAll(batchFilter, "_", " ")))
 	var out []Application
 
 	for _, a := range s.db.Applications {
@@ -1132,14 +1148,21 @@ func (s *Service) AdminListApplications(q, stateFilter, catFilter, statusFilter 
 		if catFilter != "" && a.Category != catFilter {
 			continue
 		}
+		if batchFilter != "" {
+			aBatch := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(a.DisbursementBatch, "_", " ")))
+			if aBatch != batchFilter {
+				continue
+			}
+		}
 		if stateFilter != "" && !strings.EqualFold(a.Profile.StateOfOperation, stateFilter) && !strings.EqualFold(a.Profile.StateOfOrigin, stateFilter) && !strings.EqualFold(a.State, stateFilter) {
 			continue
 		}
 		if q != "" {
-			combined := strings.ToLower(fmt.Sprintf("%s %s %s %s %s %s %s",
+			combined := strings.ToLower(fmt.Sprintf("%s %s %s %s %s %s %s %s %s",
 				a.Profile.FullName, a.FullName,
 				a.Profile.Email, a.Phone,
 				a.Profile.BusinessName, a.BusinessName,
+				a.DisbursementBatch, a.DisbursementDate,
 				a.ReferenceCode))
 			if !strings.Contains(combined, q) {
 				continue
@@ -1196,11 +1219,25 @@ func (s *Service) AdminSetChecks(id string, checks ApplicationChecks) error {
 	})
 }
 
-func (s *Service) AdminApprove(id, disbursementDate string) error {
+func (s *Service) AdminApprove(id, batch, disbursementDate string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.mutate(func(db *database) error {
+	cleanBatch, err := NormalizeBatch(batch)
+	if err != nil {
+		return err
+	}
+
+	dTime, err := ValidateDisbursementDate(disbursementDate)
+	if err != nil {
+		return err
+	}
+	formattedDate := dTime.Format("2006-01-02")
+
+	var approvalEmail EmailMessage
+	var shouldSendEmail bool
+
+	err = s.mutate(func(db *database) error {
 		a, ok := db.Applications[id]
 		if !ok {
 			return ErrNotFound
@@ -1229,13 +1266,10 @@ func (s *Service) AdminApprove(id, disbursementDate string) error {
 			return ErrCapacity
 		}
 
-		if disbursementDate == "" {
-			disbursementDate = GetDisbursementDate()
-		}
-
 		now := s.now().UTC()
 		a.Status = StatusApproved
-		a.DisbursementDate = disbursementDate
+		a.DisbursementBatch = cleanBatch
+		a.DisbursementDate = formattedDate
 		a.DisbursementStatus = "scheduled"
 		a.UpdatedAt = now
 
@@ -1244,7 +1278,7 @@ func (s *Service) AdminApprove(id, disbursementDate string) error {
 			{
 				Number:     1,
 				AmountKobo: a.GrantAmountKobo,
-				DueDate:    disbursementDate,
+				DueDate:    formattedDate,
 				Status:     "scheduled",
 			},
 		}
@@ -1252,22 +1286,264 @@ func (s *Service) AdminApprove(id, disbursementDate string) error {
 		db.Applications[id] = a
 		db.Events = append(db.Events, Event{
 			ApplicationID: id,
+			UserID:        a.UserID,
 			Actor:         "admin",
 			Action:        "approved",
-			Details:       fmt.Sprintf("Category: %s, Amount: %d kobo, Date: %s", a.Category, a.GrantAmountKobo, disbursementDate),
+			Details:       fmt.Sprintf("Category: %s, Amount: %d kobo, Batch: %s, Date: %s", a.Category, a.GrantAmountKobo, cleanBatch, formattedDate),
 			At:            now,
 		})
 
-		// Notification queue
-		db.Outbox = append(db.Outbox, Notification{
-			ID:            a.ReferenceCode,
-			ApplicationID: id,
-			Channel:       "email",
-			Status:        "pending_provider_configuration",
-			Message:       fmt.Sprintf("Congratulations! Your Solex %s grant application (%s) for ₦%s has been approved. Scheduled disbursement: %s.", a.Category, a.ReferenceCode, formatNaira(a.GrantAmountKobo), disbursementDate),
-		})
+		// Idempotent email generation
+		emailID := "EML-APPROVAL-" + id
+		alreadyQueued := false
+		for _, em := range db.Emails {
+			if em.ID == emailID {
+				alreadyQueued = true
+				break
+			}
+		}
+
+		if !alreadyQueued {
+			subject, body := FormatApprovalEmail(
+				a.Profile.FullName,
+				a.ReferenceCode,
+				a.Category,
+				cleanBatch,
+				formattedDate,
+				a.GrantAmountKobo,
+			)
+
+			initialStatus := EmailStatusQueued
+			if _, isDev := s.emailSender.(*DevelopmentOutboxSender); isDev {
+				initialStatus = EmailStatusSavedLocally
+			}
+
+			approvalEmail = EmailMessage{
+				ID:        emailID,
+				To:        a.Profile.Email,
+				Subject:   subject,
+				Body:      body,
+				Status:    initialStatus,
+				CreatedAt: now,
+			}
+			db.Emails = append(db.Emails, approvalEmail)
+			db.Outbox = append(db.Outbox, Notification{
+				ID:            approvalEmail.ID,
+				ApplicationID: id,
+				Channel:       "email",
+				Status:        initialStatus,
+				Message:       fmt.Sprintf("Approval notification queued for %s (%s, %s, ₦%s)", a.Profile.Email, cleanBatch, formattedDate, formatNaira(a.GrantAmountKobo)),
+			})
+			shouldSendEmail = true
+		}
+
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// Dispatch email asynchronously / safely without failing the approval transaction
+	if shouldSendEmail && s.emailSender != nil {
+		if _, isDev := s.emailSender.(*DevelopmentOutboxSender); !isDev {
+			sendErr := s.emailSender.Send(context.Background(), approvalEmail)
+			_ = s.mutate(func(db *database) error {
+				for i, em := range db.Emails {
+					if em.ID == approvalEmail.ID {
+						if sendErr == nil {
+							sentNow := s.now().UTC()
+							db.Emails[i].Status = EmailStatusSent
+							db.Emails[i].SentAt = &sentNow
+							db.Emails[i].LastError = ""
+							db.Emails[i].Attempts++
+						} else {
+							db.Emails[i].Status = EmailStatusFailed
+							db.Emails[i].LastError = sendErr.Error()
+							db.Emails[i].Attempts++
+						}
+						break
+					}
+				}
+				return nil
+			})
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) AdminUpdateDisbursementSchedule(id, batch, disbursementDate, reason string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	trimmedReason := strings.TrimSpace(reason)
+	if trimmedReason == "" {
+		return errors.New("reason for schedule update is required")
+	}
+
+	cleanBatch, err := NormalizeBatch(batch)
+	if err != nil {
+		return err
+	}
+
+	dTime, err := ValidateDisbursementDate(disbursementDate)
+	if err != nil {
+		return err
+	}
+	formattedDate := dTime.Format("2006-01-02")
+
+	var updateEmail EmailMessage
+	var shouldSendEmail bool
+
+	err = s.mutate(func(db *database) error {
+		a, ok := db.Applications[id]
+		if !ok {
+			return ErrNotFound
+		}
+		if a.Status != StatusApproved {
+			return errors.New("only approved applications can have their disbursement schedule updated")
+		}
+
+		oldBatch := a.DisbursementBatch
+		oldDate := a.DisbursementDate
+		if oldBatch == cleanBatch && oldDate == formattedDate {
+			return nil // No material change
+		}
+
+		now := s.now().UTC()
+		a.DisbursementBatch = cleanBatch
+		a.DisbursementDate = formattedDate
+		a.UpdatedAt = now
+		if len(a.Instalments) > 0 {
+			a.Instalments[0].DueDate = formattedDate
+		}
+		db.Applications[id] = a
+
+		trimmedReason := strings.TrimSpace(reason)
+		if trimmedReason == "" {
+			trimmedReason = "Administrative batch / schedule adjustment"
+		}
+
+		db.Events = append(db.Events, Event{
+			ApplicationID: id,
+			UserID:        a.UserID,
+			Actor:         "admin",
+			Action:        "disbursement_schedule_updated",
+			Details:       fmt.Sprintf("Updated from %s (%s) to %s (%s). Reason: %s", oldBatch, oldDate, cleanBatch, formattedDate, trimmedReason),
+			At:            now,
+		})
+
+		// Queue email notice to applicant
+		subject, body := FormatScheduleChangeEmail(
+			a.Profile.FullName,
+			a.ReferenceCode,
+			cleanBatch,
+			formattedDate,
+			trimmedReason,
+			a.GrantAmountKobo,
+		)
+
+		initialStatus := EmailStatusQueued
+		if _, isDev := s.emailSender.(*DevelopmentOutboxSender); isDev {
+			initialStatus = EmailStatusSavedLocally
+		}
+
+		updateEmail = EmailMessage{
+			ID:        fmt.Sprintf("EML-SCHED-%s-%d", id, now.UnixNano()),
+			To:        a.Profile.Email,
+			Subject:   subject,
+			Body:      body,
+			Status:    initialStatus,
+			CreatedAt: now,
+		}
+		db.Emails = append(db.Emails, updateEmail)
+		db.Outbox = append(db.Outbox, Notification{
+			ID:            updateEmail.ID,
+			ApplicationID: id,
+			Channel:       "email",
+			Status:        initialStatus,
+			Message:       fmt.Sprintf("Schedule update email queued for %s (%s -> %s, %s -> %s)", a.Profile.Email, oldBatch, cleanBatch, oldDate, formattedDate),
+		})
+		shouldSendEmail = true
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Dispatch email safely
+	if shouldSendEmail && s.emailSender != nil {
+		if _, isDev := s.emailSender.(*DevelopmentOutboxSender); !isDev {
+			sendErr := s.emailSender.Send(context.Background(), updateEmail)
+			_ = s.mutate(func(db *database) error {
+				for i, em := range db.Emails {
+					if em.ID == updateEmail.ID {
+						if sendErr == nil {
+							sentNow := s.now().UTC()
+							db.Emails[i].Status = EmailStatusSent
+							db.Emails[i].SentAt = &sentNow
+							db.Emails[i].LastError = ""
+							db.Emails[i].Attempts++
+						} else {
+							db.Emails[i].Status = EmailStatusFailed
+							db.Emails[i].LastError = sendErr.Error()
+							db.Emails[i].Attempts++
+						}
+						break
+					}
+				}
+				return nil
+			})
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) AdminRetryEmail(emailID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var targetEmail EmailMessage
+	found := false
+	for _, em := range s.db.Emails {
+		if em.ID == emailID {
+			targetEmail = em
+			found = true
+			break
+		}
+	}
+	if !found {
+		return ErrNotFound
+	}
+
+	if s.emailSender == nil {
+		return errors.New("email sender not configured")
+	}
+
+	now := s.now().UTC()
+	sendErr := s.emailSender.Send(context.Background(), targetEmail)
+
+	_ = s.mutate(func(db *database) error {
+		for i, em := range db.Emails {
+			if em.ID == emailID {
+				if sendErr == nil {
+					db.Emails[i].Status = EmailStatusSent
+					db.Emails[i].SentAt = &now
+					db.Emails[i].LastError = ""
+					db.Emails[i].Attempts++
+				} else {
+					db.Emails[i].Status = EmailStatusFailed
+					db.Emails[i].LastError = sendErr.Error()
+					db.Emails[i].Attempts++
+				}
+				break
+			}
+		}
+		return nil
+	})
+	return sendErr
 }
 
 func (s *Service) AdminReject(id, reason string) error {
@@ -1376,6 +1652,9 @@ func (s *Service) AdminExport() []ExportRecord {
 			BusinessType:       bType,
 			Status:             a.Status,
 			GrantAmountKobo:    a.GrantAmountKobo,
+			PaymentStatus:      a.DisbursementStatus,
+			DisbursementBatch:  a.DisbursementBatch,
+			DisbursementDate:   a.DisbursementDate,
 			DisbursementStatus: a.DisbursementStatus,
 			CreatedAt:          a.CreatedAt.Format(time.RFC3339),
 		})

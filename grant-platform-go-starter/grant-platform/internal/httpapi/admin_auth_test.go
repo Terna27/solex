@@ -472,7 +472,7 @@ func TestAdminApprovalWorkflow_CompleteAndConflictPrevention(t *testing.T) {
 	}
 
 	// 1. Approval fails before checks are complete
-	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/approve", adminToken, `{"disbursement_date":"2026-12-10"}`)
+	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/approve", adminToken, `{"disbursement_batch":"Batch A","disbursement_date":"2026-12-10"}`)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("approval before checks complete should return 400, got %d %s", w.Code, w.Body.String())
 	}
@@ -494,7 +494,7 @@ func TestAdminApprovalWorkflow_CompleteAndConflictPrevention(t *testing.T) {
 	}
 
 	// 3. Approval succeeds
-	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/approve", adminToken, `{"disbursement_date":"2026-12-10"}`)
+	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/approve", adminToken, `{"disbursement_batch":"Batch A","disbursement_date":"2026-12-10"}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("approval failed: %d %s", w.Code, w.Body.String())
 	}
@@ -538,7 +538,7 @@ func TestAdminApprovalWorkflow_CompleteAndConflictPrevention(t *testing.T) {
 	}
 
 	// 6. Duplicate approval returns 409 Conflict (prevents double approval)
-	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/approve", adminToken, `{"disbursement_date":"2026-12-10"}`)
+	w = request(h, "POST", "/api/v1/admin/applications/"+app.ID+"/approve", adminToken, `{"disbursement_batch":"Batch A","disbursement_date":"2026-12-10"}`)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("duplicate approval should return 409 Conflict, got %d %s", w.Code, w.Body.String())
 	}
